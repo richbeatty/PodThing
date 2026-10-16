@@ -200,8 +200,13 @@ func (a *App) connect() error {
 	if a.s.Demo {
 		return nil
 	}
-	// Pressing Connect twice must not disconnect an already active iPod.
+	// If remote mode succeeded but the first database query failed, Connect
+	// retries browsing in the existing session instead of reconfiguring USB.
 	if a.client != nil {
+		a.Log("STAGE iAP1: retrying database without USB reconnect")
+		if err := a.load(); err != nil {
+			return fmt.Errorf("iAP database retry: %w", err)
+		}
 		return nil
 	}
 	a.Scan()
