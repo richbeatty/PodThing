@@ -115,7 +115,7 @@ func (a *App) playStorage(index uint32) error {
 	a.mu.Unlock()
 	// Embedded cover images are optional; iPod ArtworkDB is a separate
 	// container and may hold artwork unavailable in the music files.
-	go a.extractEmbeddedArt(path,int(index))
+	a.extractEmbeddedArt(path,int(index))
 	a.Log("STORAGE local decode: "+t.Artist+" / "+t.Title)
 	return nil
 }
