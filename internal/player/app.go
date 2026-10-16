@@ -199,7 +199,9 @@ func (a *App) run(fn func() error) error {
 	// Preserve the host-mode session independently of the recovery view.
 	// Never overwrite a saved host report with a device-mode snapshot.
 	latest := a.Snapshot()
-	if !latest.Demo && latest.HostRole != "device" {
+	// A switch *to* host mode has no iPod session yet. Don't overwrite
+	// the last useful report with an empty post-recovery host snapshot.
+	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || e != nil) {
 		if se := a.saveSessionReport(); se != nil {
 			a.Log("Could not preserve USB session: " + se.Error())
 		}
