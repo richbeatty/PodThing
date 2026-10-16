@@ -234,3 +234,21 @@ func TestQueryRemoteModeMalformed(t *testing.T) {
 	_, err := New(w, nil).Handshake()
 	if err == nil || !strings.Contains(err.Error(), "no state byte") { t.Fatalf("malformed response: %v", err) }
 }
+
+func TestHIDOutputReportSelectionIndependentOfDescriptorOrder(t *testing.T) {
+	frame := []byte{1,2,3,4,5,6,7}
+	for _,defs := range [][]Report{
+		{{ID: 1, Bytes: 8, Output: true}, {ID: 2, Bytes: 4, Output: true}, {ID: 3, Bytes: 12, Output: true}},
+		{{ID: 3, Bytes: 12, Output: true}, {ID: 2, Bytes: 4, Output: true}, {ID: 1, Bytes: 8, Output: true}},
+	} {
+		reports,err:=Reports(frame,defs)
+		if err!=nil||len(reports)!=1||reports[0][0]!=1 {
+			t.Fatalf("wanted smallest fitting output report, got %x: %v",reports,err)
+		}
+	}
+	defs:=[]Report{{ID: 1, Bytes: 4, Output: true},{ID: 2, Bytes: 8, Output: true}}
+	reports,err:=Reports(bytes.Repeat([]byte{9},22),defs)
+	if err!=nil||len(reports)!=4||reports[0][0]!=2 {
+		t.Fatalf("wanted fragmentation using largest report, got %d: %v",len(reports),err)
+	}
+}
