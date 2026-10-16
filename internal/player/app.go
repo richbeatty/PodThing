@@ -209,7 +209,7 @@ func (a *App) run(fn func() error) error {
 	latest := a.Snapshot()
 	// A switch *to* host mode has no iPod session yet. Don't overwrite
 	// the last useful report with an empty post-recovery host snapshot.
-	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || e != nil) {
+	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || a.volume != nil || e != nil) {
 		if se := a.saveSessionReport(); se != nil {
 			a.Log("Could not preserve USB session: " + se.Error())
 		}
@@ -359,6 +359,9 @@ func (a *App) openStorage() error {
 func (a *App) ejectStorage() error {
 	if a.volume==nil {return errors.New("no mounted iPod to eject")}
 	if err:=a.player.Stop();err!=nil{return err}
+	// Preserve the last storage session before the state is replaced by
+	// Safe to Disconnect, for recovery-mode diagnostics.
+	if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("preserve storage session before eject: %w",err)}
 	if err:=a.volume.Eject();err!=nil{return err}
 	a.volume=nil
 	a.library=nil
