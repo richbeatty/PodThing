@@ -139,6 +139,22 @@ func (a *App) extractEmbeddedArt(path string, trackIndex int) {
 		a.s.HasArtwork=true
 	}
 }
+func (a *App) storageSeek(percent int) error {
+	if a.library==nil {return errors.New("music library is not open")}
+	if percent<0||percent>100{return errors.New("seek position must be 0-100")}
+	t:=a.library.Tracks[a.activeTrack]
+	if t.Duration==0 {return errors.New("this track has no known duration")}
+	pos:=uint32(uint64(t.Duration)*uint64(percent)/100)
+	path,e:=a.library.ResolveFile(t)
+	if e!=nil{return e}
+	out:=a.Snapshot().Settings.Output
+	if e=a.player.Start(path,t,out,pos);e!=nil{return e}
+	a.mu.Lock()
+	a.s.Now.Position=pos
+	a.s.Now.Playing=true
+	a.mu.Unlock()
+	return nil
+}
 func (a *App) storageControl(name string) error {
 	if a.library==nil{return errors.New("read-only library not mounted")}
 	if name=="play" {
