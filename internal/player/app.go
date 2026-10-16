@@ -178,6 +178,13 @@ func (a *App) run(fn func() error) error {
 	a.s.Error = ""
 	a.mu.Unlock()
 	e := fn()
+	// An authentication request from any Extended Interface operation
+	// (navigation, playback, metadata, or audio) is diagnostic, not a
+	// reason to discard the physical USB session.
+	if errors.Is(e, iap.ErrAuthentication) {
+		a.recordAuthentication(e, true)
+		e = nil
+	}
 	a.mu.Lock()
 	a.s.Busy = false
 	if e != nil {
