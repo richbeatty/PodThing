@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"errors"
+	"os"
 	"sync/atomic"
 )
 
@@ -46,6 +48,23 @@ func (a *App) Handler(frames *Frames) http.Handler {
 		w.Header().Set("Content-Disposition", `attachment; filename="podthing-report.json"`)
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(b)
+	})
+	// Recovery downloads the saved *host* session, never a new snapshot
+	// generated after changing the USB role.
+	mux.HandleFunc("GET /api/report/saved",func(w http.ResponseWriter,r *http.Request){
+		b,e:=a.SavedSessionReport()
+		if e!=nil {
+			if errors.Is(e,os.ErrNotExist) {
+				http.Error(w,"No saved session. Save report while in host mode first.",404)
+				return
+			}
+			http.Error(w,e.Error(),500)
+			return
+		}
+		w.Header().Set("Content-Type","application/json")
+		w.Header().Set("Content-Disposition",`attachment; filename="podthing-last-session.json"`)
+		w.Header().Set("Cache-Control","no-store")
+		_,_=w.Write(b)
 	})
 	mux.HandleFunc("POST /api/action", func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); origin != "" {

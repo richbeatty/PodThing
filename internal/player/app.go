@@ -38,6 +38,8 @@ type Snapshot struct {
 	AuthStage    string           `json:"auth_stage,omitempty"`
 	BasicRemote  bool             `json:"basic_remote"`
 	BasicLast    string           `json:"basic_last,omitempty"`
+	AccessoryProbe bool          `json:"accessory_probe"`
+	ProbeResult string           `json:"probe_result,omitempty"`
 	Name        string            `json:"name"`
 	Status      string            `json:"status"`
 	Error       string            `json:"error,omitempty"`
@@ -194,6 +196,16 @@ func (a *App) run(fn func() error) error {
 	if e != nil {
 		a.Log(e.Error())
 	}
+	// Preserve the host-mode session independently of the recovery view.
+	// Never overwrite a saved host report with a device-mode snapshot.
+	latest := a.Snapshot()
+	// A switch *to* host mode has no iPod session yet. Don't overwrite
+	// the last useful report with an empty post-recovery host snapshot.
+	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || e != nil) {
+		if se := a.saveSessionReport(); se != nil {
+			a.Log("Could not preserve USB session: " + se.Error())
+		}
+	}
 	return e
 }
 func (a *App) Close() {
@@ -218,6 +230,8 @@ func (a *App) recordAuthentication(err error, blocked bool) {
 	a.s.AuthStage = stage
 	a.s.BasicRemote = false
 	a.s.BasicLast = ""
+	a.s.AccessoryProbe = false
+	a.s.ProbeResult = ""
 	if blocked {
 		a.s.Connected = false
 		a.s.Entries = nil
@@ -228,6 +242,71 @@ func (a *App) recordAuthentication(err error, blocked bool) {
 	a.s.Focus = 0
 	a.mu.Unlock()
 	a.Log("AUTH captured at " + stage + ": " + err.Error())
+}
+// startProbe opens HID afresh and performs only the user-selected test.
+// Switching between protocols requires disconnect/replug, not an implicit
+// transition from an already failed Extended Interface session.
+func (a *App) startProbe(simple bool) error {
+	if a.s.Demo { return errors.New("hardware probe needs a real iPod") }
+	if a.client != nil { return errors.New("disconnect, then replug the iPod before switching test modes") }
+	a.Scan()
+	s := a.Snapshot()
+	var found []hardware.Device
+	for _, d := range s.USB { if d.IPod { found = append(found,d) } }
+	if len(found) != 1 { return fmt.Errorf("found %d iPods; connect one iPod via powered host adapter",len(found)) }
+	a.mu.Lock()
+	a.s.Connected=false
+	a.s.AuthRequired=false
+	a.s.AuthDetail=""
+	a.s.AuthStage=""
+	a.s.BasicRemote=false
+	a.s.BasicLast=""
+	a.s.AccessoryProbe=false
+	a.s.ProbeResult=""
+	a.s.Entries=nil
+	a.s.Total=0
+	a.s.Status="USB: opening fresh probe"
+	a.mu.Unlock()
+	w,err:=hardware.OpenIPod(found[0],a.Log)
+	if err!=nil { return fmt.Errorf("USB HID setup: %w",err) }
+	c:=iap.New(w,a.Log)
+	a.client=c
+	if simple {
+		if err=c.BeginSimpleRemote();err!=nil {
+			_ = c.Abort()
+			a.client=nil
+			return err
+		}
+		a.mu.Lock()
+		a.s.BasicRemote=true
+		a.s.Status="Simple Remote first: use buttons and watch the iPod"
+		a.s.Screen="settings-usb"
+		a.s.Focus=0
+		a.mu.Unlock()
+		a.Log("PROBE sent Simple Remote Identify without Extended Interface handshake")
+		return nil
+	}
+	a.mu.Lock()
+	a.s.AccessoryProbe=true
+	a.s.Screen="settings-usb"
+	a.s.Focus=0
+	a.mu.Unlock()
+	name,err:=c.ProbeAccessory()
+	if err!=nil {
+		if errors.Is(err,iap.ErrAuthentication) { a.recordAuthentication(err,true);return nil }
+		a.mu.Lock()
+		a.s.ProbeResult=err.Error()
+		a.s.Status="Modern identification incomplete; review saved report"
+		a.mu.Unlock()
+		a.Log("PROBE modern identification: "+err.Error())
+		return nil
+	}
+	a.mu.Lock()
+	a.s.Name=name
+	a.s.ProbeResult="Device queries succeeded; browsing and digital audio not tested"
+	a.s.Status="Modern identification answered; save/download report"
+	a.mu.Unlock()
+	return nil
 }
 func (a *App) connect() error {
 	if a.s.Demo {
@@ -264,6 +343,8 @@ func (a *App) connect() error {
 	a.s.AuthStage = ""
 	a.s.BasicRemote = false
 	a.s.BasicLast = ""
+	a.s.AccessoryProbe = false
+	a.s.ProbeResult = ""
 	a.mu.Unlock()
 	var found []hardware.Device
 	for _, d := range s.USB {
@@ -546,6 +627,10 @@ func (a *App) Action(v Action) error {
 		switch v.Name {
 		case "connect":
 			return a.connect()
+		case "probe-basic-fresh":
+			return a.startProbe(true)
+		case "probe-accessory":
+			return a.startProbe(false)
 		case "probe-basic":
 			if s.Demo {
 				return errors.New("Simple Remote testing requires a real iPod")
@@ -573,6 +658,8 @@ func (a *App) Action(v Action) error {
 				a.s.AuthStage = ""
 				a.s.BasicRemote = false
 				a.s.BasicLast = ""
+				a.s.AccessoryProbe = false
+				a.s.ProbeResult = ""
 				a.s.Entries = nil
 				a.s.Total = 0
 				a.mu.Unlock()
@@ -678,6 +765,11 @@ func (a *App) Action(v Action) error {
 			if s.Demo {
 				return errors.New("USB role changes require the real Car Thing")
 			}
+			// Save while the host-mode USB inventory, iAP state and log
+			// are still available, before Close or SetHostRole.
+			if v.Name=="usb-recovery" && s.HostRole!="device" {
+				if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("save session before recovery: %w",err)}
+			}
 			a.audio.Stop()
 			if a.client != nil {
 				_ = a.client.Close()
@@ -690,6 +782,8 @@ func (a *App) Action(v Action) error {
 			a.s.AuthStage = ""
 			a.s.BasicRemote = false
 			a.s.BasicLast = ""
+			a.s.AccessoryProbe = false
+			a.s.ProbeResult = ""
 			a.s.Entries = nil
 			a.s.Total = 0
 			a.mu.Unlock()
@@ -766,15 +860,8 @@ func (a *App) Action(v Action) error {
 			}
 			return a.audio.Tone(s.Settings.Output)
 		case "export":
-			b, e := a.Report()
-			if e != nil {
-				return e
-			}
-			path := filepath.Join(a.stateDir, "report-"+time.Now().Format("20060102-150405")+".json")
-			if e = os.WriteFile(path, b, 0600); e != nil {
-				return e
-			}
-			a.Log("Saved report: " + path)
+			if e:=a.saveSessionReport();e!=nil {return e}
+			a.Log("Saved last-session.json for recovery download")
 			return nil
 		default:
 			return errors.New("unknown action")

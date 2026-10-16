@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPacketGoldenVectors(t *testing.T) {
@@ -280,8 +281,42 @@ func TestSimpleRemoteCompatibilitySequence(t *testing.T) {
 		{Packet{Lingo:2,Command:0,Data:[]byte{0}},nil},
 	}}
 	c:=New(w,nil)
+	c.simpleHold=0
 	if err:=c.BeginSimpleRemote();err!=nil{t.Fatal(err)}
 	for _,k:=range []string{"play","next","previous"}{if err:=c.SimpleRemoteKey(k);err!=nil{t.Fatal(err)}}
 	if len(w.script)!=0 {t.Fatalf("unused commands %d",len(w.script))}
 	if err:=c.SimpleRemoteKey("artwork");err==nil{t.Fatal("accepted non-simple remote command")}
+}
+
+func TestModernAccessoryProbeNoCredentials(t *testing.T) {
+	// 0x1d: General, Simple, Display and Extended. No Digital Audio,
+	// auth options, device ID, or fictitious MFi certificate.
+	data:=append(U32(0x1d),U32(0)...)
+	data=append(data,U32(0)...)
+	w:=&scriptWire{t:t,script:[]exchange{
+		{Packet{Lingo:0,Command:0x13,Data:data},[]Packet{ack(0,0x13)}},
+		{Packet{Lingo:0,Command:7},[]Packet{{Lingo:0,Command:8,Data:[]byte("Classic\x00")}}},
+		{Packet{Lingo:0,Command:3},[]Packet{{Lingo:0,Command:4,Data:[]byte{0}}}},
+	}}
+	name,err:=New(w,nil).ProbeAccessory()
+	if err!=nil||name!="Classic"||len(w.script)!=0 {t.Fatalf("probe %q %v remaining %d",name,err,len(w.script))}
+}
+func TestModernAccessoryProbeStopsOnAuthentication(t *testing.T) {
+	data:=append(U32(0x1d),U32(0)...)
+	data=append(data,U32(0)...)
+	w:=&scriptWire{t:t,script:[]exchange{
+		{Packet{Lingo:0,Command:0x13,Data:data},[]Packet{{Lingo:0,Command:0x14}}},
+	}}
+	_,err:=New(w,nil).ProbeAccessory()
+	if !errors.Is(err,ErrAuthentication)||len(w.script)!=0 {t.Fatalf("no key means no fake auth: %v",err)}
+}
+func TestSimpleRemoteHeldFor150ms(t *testing.T) {
+	w:=&scriptWire{t:t,script:[]exchange{
+		{Packet{Lingo:2,Command:0,Data:[]byte{8}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0}},nil},
+	}}
+	c:=New(w,nil)
+	start:=time.Now()
+	if err:=c.SimpleRemoteKey("next");err!=nil {t.Fatal(err)}
+	if time.Since(start)<140*time.Millisecond {t.Fatal("released button too soon")}
 }

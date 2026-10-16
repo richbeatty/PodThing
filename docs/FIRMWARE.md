@@ -196,3 +196,32 @@ before attempting a fresh Extended Interface session. If only
 authenticated mode works on stock firmware, a compatible authorized
 MFi authentication provider or a different audio/control architecture
 will be necessary.
+
+## 0.1.0-test.6: saved diagnostics and separate USB compatibility probes
+
+Use **Connection → Simple Remote first** before attempting legacy
+Extended Interface. It sends legacy Identify with lingo 0x02 as the
+first iAP command, then holds each Play/Next/Previous key for 150 ms
+before releasing it. These commands have no acknowledgment: observe
+playback on the iPod itself.
+
+**Connection → Modern accessory probe** separately sends
+IdentifyDeviceLingoes (General, Simple, Display, Extended), with
+zero authentication options and device ID, and no Digital Audio
+lingo. It checks the identification ACK, iPod name, and remote UI
+state without entering remote mode. This borrows the approach used
+by the accessory-side Linux host in Senyeah/pi-iap-bt-bridge, but
+does not present a certificate or try to bypass MFi authentication.
+It may be rejected by stock firmware.
+
+The older **Connect iPod (legacy)** flow remains available for
+comparison. **Disconnect and physically replug** the iPod between
+test modes. Never interpret successful USB writes as verified control.
+
+After each host-mode test PodThing automatically saves
+`state/last-session.json`. Entering **Computer recovery** saves the
+host-mode report **before** resetting the USB role and the iAP
+session. In the recovery browser console, choose **Download saved
+session** (not **Live snapshot**). The saved report survives an app
+restart. If no session was saved, the endpoint reports a clear 404
+instead of silently substituting a recovery-mode report.

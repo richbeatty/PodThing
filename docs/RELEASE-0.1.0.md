@@ -1,3 +1,19 @@
+## 0.1.0-test.6 hardware compatibility probes
+
+- New fresh Simple Remote test without prior Extended Interface handshake;
+  each Play/Pause, Next and Previous press lasts 150 ms and remains
+  unacknowledged by iAP.
+- Separate modern IdentifyDeviceLingoes test with no MFi
+  credential claims or digital audio support; records ACK, device
+  queries, and explicit authentication refusals.
+- Persist last host-mode diagnostics to `state/last-session.json`
+  before switching USB roles. The browser now distinguishes
+  **Download saved session** from **Live snapshot**.
+- Adds iAP packet-sequence, timing and persisted-HTTP regression tests.
+
+**Experimental:** Physical control and USB audio on Apple's stock
+iPod Classic are not yet verified. This release does not unlock MFi.
+
 Independent replacement firmware for Spotify Car Thing, packaged for Terbium.
 It replaces Prelude; SSH and ADB are not required for installation.
 
