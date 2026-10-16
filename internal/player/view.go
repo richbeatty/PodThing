@@ -14,6 +14,7 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/image/vector"
+	xdraw "golang.org/x/image/draw"
 )
 
 type Hit struct {
@@ -341,9 +342,16 @@ func (p *Painter) ipod(img *image.RGBA, x, y int, scale float64) {
 }
 func (p *Painter) playing(img *image.RGBA,s Snapshot) {
 	ac:=themeAccent(s)
-	round(img,35,115,230,230,22,tintMix(ac,78))
-	round(img,58,138,184,184,18,tintMix(ac,35))
-	p.glyph(img,134,205,"music",textColor)
+	if s.HasArtwork && s.Artwork != nil {
+		// Catmull-Rom scaling avoids blocky nearest-neighbor cover art.
+		cover := image.NewRGBA(image.Rect(0,0,230,230))
+		xdraw.CatmullRom.Scale(cover,cover.Bounds(),s.Artwork,s.Artwork.Bounds(),xdraw.Over,nil)
+		draw.Draw(img,image.Rect(35,115,265,345),cover,image.Point{},draw.Over)
+	} else {
+		round(img,35,115,230,230,22,tintMix(ac,78))
+		round(img,58,138,184,184,18,tintMix(ac,35))
+		p.glyph(img,134,205,"music",textColor)
+	}
 	track:=s.Now.Title
 	if track=="" {track="Nothing playing"}
 	p.text(img,315,161,30,true,textColor,track,450)
