@@ -5,6 +5,7 @@ This verifies generic kernel boot and the OS/app startup, not Car Thing board
 initialization, its display, USB controller, accessory protocol or audio.
 """
 import json
+import os
 import pathlib
 import subprocess
 import time
@@ -49,6 +50,9 @@ with (out / 'qemu-boot.log').open('w') as log:
             raise SystemExit('ARM64 boot smoke timed out; see build/direct/qemu-boot.log')
         if not state.get('demo'):
             raise SystemExit('Boot smoke did not start explicitly labeled demo mode')
+        expected = os.environ.get('PODTHING_VERSION')
+        if expected and state.get('version') != expected:
+            raise SystemExit(f"Expected firmware {expected}, got {state.get('version')} in ARM64 image")
         previous_frame = request('/frame.png')
         request('/api/action', {'name': 'navigate', 'text': 'Songs'})
         after = json.loads(request('/api/state'))
