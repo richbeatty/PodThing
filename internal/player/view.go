@@ -55,12 +55,24 @@ func BuildView(s Snapshot) View {
 	case "settings-usb","diagnostics":
 		v.Title,v.Caption="Connection","USB host, iPod and recovery"
 		v.Rows=[]Row{
-			{"Connect iPod",s.Name,Action{Name:"connect"}},
+			{"Simple Remote first","150ms press; fresh HID session",Action{Name:"probe-basic-fresh"}},
+			{"Modern accessory probe","No MFi; checks USB iAP1 identification",Action{Name:"probe-accessory"}},
+			{"Connect iPod (legacy)","Existing Extended Interface path",Action{Name:"connect"}},
 			{"Rescan devices",fmt.Sprintf("%d USB devices",len(s.USB)),Action{Name:"rescan"}},
 			{"Enable USB host","Normal iPod use",Action{Name:"usb-host"}},
 			{"Computer recovery","USB diagnostic download",Action{Name:"usb-recovery"}},
 			{"Save diagnostic report","Stored on device",Action{Name:"export"}},
 			{"Disconnect iPod","Release accessory mode",Action{Name:"disconnect"}},
+		}
+		if s.BasicRemote && !s.AuthRequired {
+			v.Rows=append([]Row{
+				{"Test Play / Pause","150ms press; no ACK",Action{Name:"play"}},
+				{"Test Next Track","150ms press; no ACK",Action{Name:"next"}},
+				{"Test Previous Track","150ms press; no ACK",Action{Name:"previous"}},
+			},v.Rows...)
+		}
+		if s.ProbeResult!="" {
+			v.Rows=append([]Row{{"Modern probe result",s.ProbeResult,Action{Name:"settings-page",Text:"settings-usb"}}},v.Rows...)
 		}
 		if s.AuthRequired {
 			probe:=[]Row{
@@ -68,7 +80,7 @@ func BuildView(s Snapshot) View {
 				{"Blocked at",s.AuthStage,Action{Name:"settings-page",Text:"settings-usb"}},
 			}
 			if !s.BasicRemote {
-				probe=append(probe,Row{"Try Simple Remote","No MFi; basic controls only",Action{Name:"probe-basic"}})
+				probe=append(probe,Row{"Legacy Simple Remote","After auth; fresh test preferred",Action{Name:"probe-basic"}})
 			} else {
 				probe=append(probe,
 					Row{"Test Play / Pause","No ACK; watch iPod",Action{Name:"play"}},
@@ -270,6 +282,7 @@ func (p *Painter) Render(v View) *image.RGBA {
 	status:="NOT CONNECTED"
 	if st.Connected {status="IPOD CONNECTED"}
 	if st.AuthRequired {status="AUTH REQUIRED"}
+	if st.AccessoryProbe {status="ACCESSORY PROBE"}
 	if st.BasicRemote {status="BASIC REMOTE TEST"}
 	if st.Demo {status="UI PREVIEW"}
 	if st.Busy {status="CONNECTING"}
@@ -297,7 +310,11 @@ func (p *Painter) Render(v View) *image.RGBA {
 		head,sub:="Your music, ready to go.","Connect your iPod to browse and play."
 		if st.AuthRequired {
 			head="Accessory authentication required"
-			sub="Open Connection settings for a basic control test."
+			sub="Open Connection settings for the next probe."
+		}
+		if st.BasicRemote {
+			head="Simple Remote test ready"
+			sub="Use playback buttons; watch the iPod."
 		}
 		p.text(img,194,209,27,true,textColor,head,550)
 		p.text(img,194,244,16,false,muted,sub,550)
