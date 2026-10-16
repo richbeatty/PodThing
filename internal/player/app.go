@@ -604,8 +604,8 @@ func (a *App) Action(v Action) error {
 				a.mu.Unlock()
 				return nil
 			}
-			if s.AuthRequired {
-				return errors.New("MFi required for extended controls; choose Try basic remote in Connection")
+			if s.AuthRequired && !s.Connected {
+				return errors.New("MFi required for extended controls; choose Try Simple Remote in Connection")
 			}
 			code := byte(1)
 			if v.Name == "next" {
