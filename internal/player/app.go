@@ -15,7 +15,7 @@ import (
 	"github.com/richbeatty/PodThing/internal/iap"
 )
 
-const Version = "0.1.0-test"
+var Version = "0.1.0-test" // Linked to the firmware revision.
 const PageSize = 25
 
 var Categories = []string{"Artists", "Albums", "Songs", "Playlists"}
