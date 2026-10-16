@@ -2,14 +2,16 @@
 set -eu
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 GO=${GO:-go}
+PODTHING_VERSION=${PODTHING_VERSION:-0.1.0-test}
+LDFLAGS="-s -w -buildid= -X github.com/richbeatty/PodThing/internal/player.Version=$PODTHING_VERSION"
 mkdir -p dist
 "$GO" mod verify
 "$GO" test ./...
 for target in arm64 arm; do
     case "$target" in arm) export GOARM=7 ;; esac
-    CGO_ENABLED=0 GOOS=linux GOARCH="$target" "$GO" build -trimpath -ldflags='-s -w -buildid=' -o "dist/podthing-linux-$target" ./cmd/podthing
+    CGO_ENABLED=0 GOOS=linux GOARCH="$target" "$GO" build -trimpath -ldflags="$LDFLAGS" -o "dist/podthing-linux-$target" ./cmd/podthing
 done
-CGO_ENABLED=0 "$GO" build -trimpath -o dist/podthing-host ./cmd/podthing
+CGO_ENABLED=0 "$GO" build -trimpath -ldflags="$LDFLAGS" -o dist/podthing-host ./cmd/podthing
 cp scripts/run-on-prelude.sh dist/run-on-prelude.sh
 cp docs/DEVICE-TEST.md dist/DEVICE-TEST.md
 cp THIRD_PARTY.md dist/THIRD_PARTY.md
