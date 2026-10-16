@@ -120,3 +120,21 @@ An alternative Yocto image definition remains under `firmware/meta-podthing`;
 `sh scripts/build-firmware-yocto.sh` uses it. Its GNU/Yocto upstream downloads
 are blocked by this cloud's egress proxy. The default Debian-based build uses
 accessible authenticated sources and does not depend on those downloads.
+
+## iPod connection hardware-test fixes
+
+The earlier test image waited for an ACK to legacy Identify. This command
+has no acknowledgment, so an otherwise valid iPod could time out before
+EnterRemoteUIMode. Identify is now send-only, and connect retries no longer
+close an existing session.
+
+After a failed USB accessory handshake, PodThing leaves a successfully selected
+HID accessory configuration active rather than immediately restoring mass
+storage. Deliberate Disconnect restores the original USB configuration.
+If selecting the accessory configuration fails, it reconnects the original
+drivers. The USB & Audio diagnostics view includes the last error even if
+USB recovery networking is unavailable.
+
+This fixes a known handshake bug but does not guarantee that a particular
+iPod Classic exposes the required USB HID accessory interface or that
+USB digital audio works. Authentication remains unsupported.

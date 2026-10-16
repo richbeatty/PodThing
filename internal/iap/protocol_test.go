@@ -129,7 +129,7 @@ func ack(lingo byte, cmd uint16) Packet {
 }
 func TestAccessoryHandshakeAndPagedBrowsing(t *testing.T) {
 	w := &scriptWire{t: t, script: []exchange{
-		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, []Packet{ack(0, 1)}}, {Packet{Lingo: 0, Command: 5}, []Packet{ack(0, 5)}}, {Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("Test iPod\x00")}}},
+		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil}, {Packet{Lingo: 0, Command: 5}, []Packet{ack(0, 5)}}, {Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("Test iPod\x00")}}},
 		{Packet{Lingo: 4, Command: 0x16}, []Packet{ack(4, 0x16)}}, {Packet{Lingo: 4, Command: 0x17, Data: []byte{2, 0, 0, 0, 7}}, []Packet{ack(4, 0x17)}}, {Packet{Lingo: 4, Command: 0x18, Data: []byte{3}}, []Packet{{Lingo: 4, Command: 0x19, Data: U32(27)}}},
 		{Packet{Lingo: 4, Command: 0x1a, Data: []byte{3, 0, 0, 0, 25, 0, 0, 0, 2}}, []Packet{{Lingo: 4, Command: 0x1b, Data: append(U32(25), []byte("First\x00")...)}, {Lingo: 4, Command: 0x1b, Data: append(U32(25), []byte("duplicate\x00")...)}, {Lingo: 4, Command: 0x1b, Data: append(U32(26), []byte("Second\x00")...)}}},
 	}}
@@ -147,7 +147,7 @@ func TestAccessoryHandshakeAndPagedBrowsing(t *testing.T) {
 	}
 }
 func TestAuthenticationChallengeIsNotFaked(t *testing.T) {
-	w := &scriptWire{t: t, script: []exchange{{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, []Packet{{Lingo: 0, Command: 0x14}}}}}
+	w := &scriptWire{t: t, script: []exchange{{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil}, {Packet{Lingo: 0, Command: 5}, []Packet{{Lingo: 0, Command: 0x14}}}}}
 	c := New(w, nil)
 	_, e := c.Handshake()
 	if !errors.Is(e, ErrAuthentication) {
@@ -169,5 +169,35 @@ func TestDigitalAudioCapabilities(t *testing.T) {
 	}
 	if len(w.script) != 0 {
 		t.Fatal("audio negotiation incomplete")
+	}
+}
+
+// A real iPod need not acknowledge legacy Identify, only EnterRemoteUIMode.
+func TestHandshakeWithoutIdentifyAck(t *testing.T) {
+	w := &scriptWire{t: t, script: []exchange{
+		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil},
+		{Packet{Lingo: 0, Command: 5}, []Packet{ack(0, 5)}},
+		{Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("Classic\x00")}}},
+	}}
+	name, err := New(w, nil).Handshake()
+	if err != nil || name != "Classic" || len(w.script) != 0 {
+		t.Fatalf("handshake = %q, %v, unused steps %d", name, err, len(w.script))
+	}
+}
+type restoreWire struct { closed, restored bool }
+func (w *restoreWire) Send([]byte) error { return nil }
+func (w *restoreWire) Receive(context.Context) ([]byte, error) { return nil, context.DeadlineExceeded }
+func (w *restoreWire) Close() error { w.closed = true; return nil }
+func (w *restoreWire) RestoreOriginalOnClose() { w.restored = true }
+func TestAbortPreservesAccessoryMode(t *testing.T) {
+	w := &restoreWire{}
+	if err := New(w, nil).Abort(); err != nil || !w.closed || w.restored {
+		t.Fatalf("abort should close without restoring storage: %+v, %v", w, err)
+	}
+}
+func TestExplicitDisconnectRestoresStorage(t *testing.T) {
+	w := &restoreWire{}
+	if err := New(w, nil).Close(); err != nil || !w.closed || !w.restored {
+		t.Fatalf("explicit close should request original configuration: %+v, %v", w, err)
 	}
 }

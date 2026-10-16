@@ -193,9 +193,9 @@ func (a *App) connect() error {
 	if a.s.Demo {
 		return nil
 	}
+	// Pressing Connect twice must not disconnect an already active iPod.
 	if a.client != nil {
-		_ = a.client.Close()
-		a.client = nil
+		return nil
 	}
 	a.Scan()
 	s := a.Snapshot()

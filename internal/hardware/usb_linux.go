@@ -222,6 +222,7 @@ type USB struct {
 	reassembly iap.Reassembler
 	original   int
 	changed    bool
+	restore    bool
 	device     Device
 	log        func(string)
 }
@@ -270,6 +271,12 @@ func OpenIPod(d Device, log func(string)) (*USB, error) {
 	ok := false
 	defer func() {
 		if !ok {
+			// If the configuration switch failed, rebind original drivers.
+			// Once in accessory mode, keep that mode selected on failure,
+			// instead of toggling the iPod back to mass storage.
+			if !u.changed {
+				u.RestoreOriginalOnClose()
+			}
 			_ = u.Close()
 		}
 	}()
@@ -425,29 +432,36 @@ func (u *USB) interrupt(ctx context.Context) ([]byte, error) {
 		}
 	}
 }
+// RestoreOriginalOnClose is deliberately called only for a user-initiated
+// disconnect. An aborted handshake keeps the accessory configuration active.
+func (u *USB) RestoreOriginalOnClose() { u.restore = true }
+
 func (u *USB) Close() error {
 	if u.file == nil {
 		return nil
 	}
 	n := uint32(u.iface.Number)
 	_, _ = ioctl(u.file.Fd(), ioctlCode(2, 16, 4), unsafe.Pointer(&n))
-	if u.changed {
+	if u.restore && u.changed {
 		v := uint32(u.original)
 		if _, e := ioctl(u.file.Fd(), ioctlCode(2, 5, 4), unsafe.Pointer(&v)); e != nil {
 			u.log("Could not restore original USB configuration: " + e.Error())
 		}
 	}
-	// Reconnect original kernel drivers, including after an interrupted setup.
-	for _, cfg := range u.device.Configurations {
-		if int(cfg.Value) != u.original {
-			continue
-		}
-		for _, in := range cfg.Interfaces {
-			if in.Alternate != 0 {
+	if u.restore {
+		// Reattach the original kernel drivers only on deliberate
+		// disconnect, not during a failed accessory handshake.
+		for _, cfg := range u.device.Configurations {
+			if int(cfg.Value) != u.original {
 				continue
 			}
-			q := usbIoctl{Interface: int32(in.Number), Code: int32(ioctlCode(0, 23, 0))}
-			_, _ = ioctl(u.file.Fd(), ioctlCode(3, 18, unsafe.Sizeof(q)), unsafe.Pointer(&q))
+			for _, in := range cfg.Interfaces {
+				if in.Alternate != 0 {
+					continue
+				}
+				q := usbIoctl{Interface: int32(in.Number), Code: int32(ioctlCode(0, 23, 0))}
+				_, _ = ioctl(u.file.Fd(), ioctlCode(3, 18, unsafe.Sizeof(q)), unsafe.Pointer(&q))
+			}
 		}
 	}
 	e := u.file.Close()
