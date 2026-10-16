@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/richbeatty/PodThing/internal/iap"
+	"github.com/richbeatty/PodThing/internal/storage"
 )
 
 func demoApp(t *testing.T) *App {
@@ -241,4 +242,52 @@ func TestConnectionViewOffersSeparateProbePaths(t *testing.T){
 	if !got["probe-basic-fresh"]||!got["probe-accessory"]||!got["connect"]{
 		t.Fatalf("missing probe choices: %+v",rows)
 	}
+}
+
+func TestReadOnlyStorageNavigationAndAudioPrerequisite(t *testing.T) {
+	a:=demoApp(t)
+	a.library=&storage.Library{Root:t.TempDir(),Tracks:[]storage.Track{
+		{ID:10,Artist:"Apple",Album:"First",Title:"Alpha",Location:":iPod_Control:Music:F00:A.mp3"},
+		{ID:11,Artist:"Apple",Album:"First",Title:"Beta",Location:":iPod_Control:Music:F00:B.mp3"},
+		{ID:12,Artist:"Beatles",Album:"Other",Title:"Gamma",Location:":iPod_Control:Music:F00:C.mp3"},
+	},Playlists:[]storage.Playlist{{Name:"Road Music",IDs:[]uint32{12,10}}}}
+	a.mu.Lock()
+	a.s.StorageMode=true
+	a.s.Connected=true
+	a.s.Demo=false
+	a.s.Path=nil
+	a.s.Offset=0
+	a.s.Focus=0
+	a.s.Category="Artists"
+	a.mu.Unlock()
+	if err:=a.load();err!=nil {t.Fatal(err)}
+	if got:=a.Snapshot();got.Total!=2||got.Entries[0].Name!="Apple"{t.Fatalf("artist list %+v",got.Entries)}
+	if err:=a.activate(0);err!=nil {t.Fatal(err)}
+	s:=a.Snapshot()
+	if s.Category!="Albums"||s.Total!=1||s.Entries[0].Name!="First"{t.Fatalf("album list %+v",s)}
+	if err:=a.activate(0);err!=nil {t.Fatal(err)}
+	s=a.Snapshot()
+	if s.Category!="Songs"||s.Total!=2||s.Entries[0].Name!="Alpha"{t.Fatalf("songs %+v",s)}
+	// Never fake playback when the Car Thing has no DAC and don't open
+	// the music file without a real audio output.
+	if err:=a.playStorage(s.Entries[0].Index);err==nil||!strings.Contains(err.Error(),"audio output"){
+		t.Fatalf("unavailable audio unexpectedly started: %v",err)
+	}
+	a.mu.Lock()
+	a.s.Path=nil
+	a.s.Category="Playlists"
+	a.s.Offset=0
+	a.mu.Unlock()
+	if err:=a.load();err!=nil {t.Fatal(err)}
+	if a.Snapshot().Entries[0].Name!="Road Music"{t.Fatal("playlist navigation unavailable")}
+	if err:=a.activate(0);err!=nil {t.Fatal(err)}
+	s=a.Snapshot()
+	if s.Category!="Songs"||s.Total!=2||s.Entries[0].Name!="Gamma"||s.Entries[1].Name!="Alpha"{
+		t.Fatalf("playlist order not honored: %+v",s.Entries)
+	}
+}
+func TestSafeEjectRefusesUnmountError(t *testing.T) {
+	a:=demoApp(t)
+	if err:=a.ejectStorage();err==nil {t.Fatal("eject should refuse an absent mount")}
+	if a.Snapshot().SafeToDisconnect {t.Fatal("never claim safe ejection without a successful unmount")}
 }
