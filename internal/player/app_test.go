@@ -122,7 +122,7 @@ func TestHTTPActionsAndCrossOrigin(t *testing.T) {
 func TestNativeAndConsoleUseSameTouchTargets(t *testing.T) {
 	a := demoApp(t)
 	action(t, a, "tap", 0, "")
-	if e := a.Action(Action{Name: "tap", X: 220, Y: 80}); e != nil {
+	if e := a.Action(Action{Name: "tap", X: 220, Y: 104}); e != nil {
 		t.Fatal(e)
 	}
 	if a.Snapshot().Category != "Albums" {
