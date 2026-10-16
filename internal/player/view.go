@@ -63,18 +63,19 @@ func BuildView(s Snapshot) View {
 			{"Disconnect iPod","Release accessory mode",Action{Name:"disconnect"}},
 		}
 		if s.AuthRequired {
-			v.Rows=append([]Row{
+			probe:=[]Row{
 				{"Authentication requested",s.AuthDetail,Action{Name:"settings-page",Text:"settings-usb"}},
 				{"Blocked at",s.AuthStage,Action{Name:"settings-page",Text:"settings-usb"}},
-			},v.Rows...)
-			if !s.BasicRemote {
-				v.Rows=append(v.Rows,Row{"Try Simple Remote","No MFi; tests basic controls only",Action{Name:"probe-basic"}})
-			} else {
-				v.Rows=append(v.Rows,
-					Row{"Test Play / Pause","Unacknowledged; watch iPod",Action{Name:"play"}},
-					Row{"Test Next Track","Unacknowledged; watch iPod",Action{Name:"next"}},
-					Row{"Test Previous Track","Unacknowledged; watch iPod",Action{Name:"previous"}})
 			}
+			if !s.BasicRemote {
+				probe=append(probe,Row{"Try Simple Remote","No MFi; basic controls only",Action{Name:"probe-basic"}})
+			} else {
+				probe=append(probe,
+					Row{"Test Play / Pause","No ACK; watch iPod",Action{Name:"play"}},
+					Row{"Test Next Track","No ACK; watch iPod",Action{Name:"next"}},
+					Row{"Test Previous Track","No ACK; watch iPod",Action{Name:"previous"}})
+			}
+			v.Rows=append(probe,v.Rows...)
 		}
 		if s.Error!="" {v.Rows=append(v.Rows,Row{"Last error",s.Error,Action{Name:"rescan"}})}
 		for _,d:=range s.USB {if d.IPod {v.Rows=append(v.Rows,Row{"Detected iPod",d.Product+fmt.Sprintf(" / cfg %d",d.Active),Action{Name:"rescan"}})}}
@@ -268,6 +269,8 @@ func (p *Painter) Render(v View) *image.RGBA {
 	p.text(img,titleX,70,13,false,muted,v.Caption,573)
 	status:="NOT CONNECTED"
 	if st.Connected {status="IPOD CONNECTED"}
+	if st.AuthRequired {status="AUTH REQUIRED"}
+	if st.BasicRemote {status="BASIC REMOTE TEST"}
 	if st.Demo {status="UI PREVIEW"}
 	if st.Busy {status="CONNECTING"}
 	statusColor:=muted
