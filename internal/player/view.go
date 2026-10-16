@@ -253,6 +253,7 @@ func (p *Painter) Render(v View) *image.RGBA {
 	p.text(img,titleX,70,13,false,muted,v.Caption,573)
 	status:="NOT CONNECTED"
 	if st.Connected {status="IPOD CONNECTED"}
+	if st.Demo {status="UI PREVIEW"}
 	if st.Busy {status="CONNECTING"}
 	statusColor:=muted
 	if st.Connected {statusColor=green}
