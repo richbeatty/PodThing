@@ -43,6 +43,7 @@ jobs:
           name: podthing-build
           if-no-files-found: error
           path: |
+            dist/podthing-ui-preview.png
             dist/podthing-0.1.0-test.tar.gz
             dist/podthing-0.1.0-flashthing.zip
             dist/podthing-0.1.0-flashthing.zip.sha256

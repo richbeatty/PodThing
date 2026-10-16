@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,7 +16,7 @@ import (
 	"github.com/richbeatty/PodThing/internal/iap"
 )
 
-const Version = "0.1.0-test"
+var Version = "0.1.0-test" // Linked to the firmware revision.
 const PageSize = 25
 
 var Categories = []string{"Artists", "Albums", "Songs", "Playlists"}
@@ -44,6 +45,9 @@ type Snapshot struct {
 	Total       uint32            `json:"total"`
 	Focus       int               `json:"focus"`
 	Now         iap.NowPlaying    `json:"now"`
+	Accent      [3]uint8         `json:"accent"`
+	HasArtwork  bool             `json:"has_artwork"`
+	Artwork     image.Image      `json:"-"`
 	Settings    Settings          `json:"settings"`
 	USB         []hardware.Device `json:"usb"`
 	Audio       []hardware.PCM    `json:"audio"`
@@ -75,7 +79,7 @@ func New(demo bool, stateDir string) (*App, error) {
 	if e := os.MkdirAll(stateDir, 0700); e != nil {
 		return nil, e
 	}
-	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect your iPod, then choose Connect", Screen: "library", Category: "Artists", Focus: 0, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}}}}
+	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect your iPod, then choose Connect", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}}}}
 	b, e := os.ReadFile(filepath.Join(stateDir, "settings.json"))
 	if e == nil {
 		if e = json.Unmarshal(b, &a.s.Settings); e != nil {
@@ -328,6 +332,13 @@ func (a *App) activate(index int) error {
 }
 func (a *App) back() error {
 	s := a.Snapshot()
+	if strings.HasPrefix(s.Screen, "settings-") {
+		a.mu.Lock()
+		a.s.Screen = "settings"
+		a.s.Focus = 0
+		a.mu.Unlock()
+		return nil
+	}
 	if s.Screen != "library" {
 		a.mu.Lock()
 		a.s.Screen = "library"
@@ -360,6 +371,13 @@ func (a *App) refresh() error {
 		return e
 	}
 	a.mu.Lock()
+	// Artwork always belongs to the displayed track. Never carry the last
+	// album's colors or cover into the next track when they change.
+	if a.s.Now.Title != n.Title || a.s.Now.Album != n.Album || a.s.Now.Artist != n.Artist {
+		a.s.Accent = [3]uint8{96, 154, 255}
+		a.s.Artwork = nil
+		a.s.HasArtwork = false
+	}
 	a.s.Now = n
 	a.mu.Unlock()
 	return nil
@@ -417,9 +435,19 @@ func (a *App) Action(v Action) error {
 	if v.Name == "scroll" {
 		return a.scroll(v.Value)
 	}
-	if v.Name == "settings" || v.Name == "diagnostics" || v.Name == "playing" {
+	if v.Name == "settings" || v.Name == "diagnostics" || v.Name == "playing" || v.Name == "settings-page" {
+		screen := v.Name
+		if screen == "diagnostics" {
+			screen = "settings-usb"
+		}
+		if screen == "settings-page" {
+			if v.Text != "settings-usb" && v.Text != "settings-audio" && v.Text != "settings-controls" && v.Text != "settings-about" {
+				return errors.New("unknown settings page")
+			}
+			screen = v.Text
+		}
 		a.mu.Lock()
-		a.s.Screen = v.Name
+		a.s.Screen = screen
 		a.s.Focus = 0
 		a.mu.Unlock()
 		return nil

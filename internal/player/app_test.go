@@ -122,7 +122,7 @@ func TestHTTPActionsAndCrossOrigin(t *testing.T) {
 func TestNativeAndConsoleUseSameTouchTargets(t *testing.T) {
 	a := demoApp(t)
 	action(t, a, "tap", 0, "")
-	if e := a.Action(Action{Name: "tap", X: 220, Y: 80}); e != nil {
+	if e := a.Action(Action{Name: "tap", X: 220, Y: 104}); e != nil {
 		t.Fatal(e)
 	}
 	if a.Snapshot().Category != "Albums" {
@@ -136,4 +136,32 @@ func TestNativeAndConsoleUseSameTouchTargets(t *testing.T) {
 	if img.Bounds().Dx() != 800 || img.Bounds().Dy() != 480 {
 		t.Fatal("incorrect Car Thing geometry")
 	}
+}
+
+func TestNestedSettingsNavigation(t *testing.T) {
+	a := demoApp(t)
+	action(t,a,"settings",0,"")
+	if a.Snapshot().Screen!="settings" {t.Fatal("settings page unavailable")}
+	action(t,a,"settings-page",0,"settings-controls")
+	if a.Snapshot().Screen!="settings-controls" {t.Fatal("controls not nested")}
+	action(t,a,"back",0,"")
+	if a.Snapshot().Screen!="settings" {t.Fatal("back did not return to settings")}
+	action(t,a,"settings-page",0,"settings-about")
+	if a.Snapshot().Screen!="settings-about" {t.Fatal("missing about/credits")}
+	action(t,a,"back",0,"")
+	action(t,a,"back",0,"")
+	if a.Snapshot().Screen!="library" {t.Fatal("settings did not return to library")}
+}
+func TestSettingsRemovedFromTopRight(t *testing.T) {
+	a := demoApp(t)
+	v:=a.View()
+	for _,hit:=range v.Hits {
+		if hit.X<=735 && hit.X+hit.W>735 && hit.Y<=26 && hit.Y+hit.H>26 && hit.Action.Name=="settings" {
+			t.Fatal("old top right settings button still active")
+		}
+	}
+	action(t,a,"tap",0,"")
+	if a.Snapshot().Screen!="library" {t.Fatal("unexpected navigation")}
+	if err:=a.Action(Action{Name:"tap",X:29,Y:443});err!=nil {t.Fatal(err)}
+	if a.Snapshot().Screen!="settings" {t.Fatal("footer settings button not active")}
 }

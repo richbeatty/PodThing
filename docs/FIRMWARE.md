@@ -33,8 +33,9 @@ This recovery procedure has not been exercised on a physical device here.
 Use Car Thing → powered USB-C OTG hub → ordinary USB-to-30-pin data cable →
 iPod classic, and connect the hub's 3.5 mm output to AUX.
 
-The firmware boots with its USB port in **device/recovery mode**. With the hub
-powered, press **Enable USB host**, attach the iPod and choose **Connect iPod**.
+The firmware now boots with its USB port in **host mode**. Attach a powered
+OTG hub and the iPod, then choose **Connect iPod**. Use Settings > Connection
+> Computer recovery to switch temporarily to USB device/network mode.
 It will not mount or rewrite the iPod's music filesystem.
 
 - The four presets open Artists, Albums, Songs and Playlists. Turn the wheel to
@@ -138,3 +139,14 @@ USB recovery networking is unavailable.
 This fixes a known handshake bug but does not guarantee that a particular
 iPod Classic exposes the required USB HID accessory interface or that
 USB digital audio works. Authentication remains unsupported.
+
+## Revision, boot logo and automatic USB host
+
+Each revision has a uniquely named Terbium ZIP and shows its version inside
+Settings. The boot slots contain a full-screen black `logo.bmp` to override
+the upstream ThingLabs splash without changing the signed U-Boot binary.
+Credits remain visible under Settings > About.
+
+USB boots in host mode for the iPod and powered hub. Switch to USB recovery
+mode from Settings > Connection to connect a computer for diagnostic access.
+Hardware recovery using preset buttons 1 + 4 remains available.

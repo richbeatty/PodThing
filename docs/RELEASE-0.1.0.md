@@ -1,9 +1,14 @@
 Independent replacement firmware for Spotify Car Thing, packaged for Terbium.
 It replaces Prelude; SSH and ADB are not required for installation.
 
-Download `podthing-0.1.0-flashthing.zip` and its `.sha256` file from the assets.
+Download the revision-specific installer ending in `-flashthing.zip` and its matching `.sha256` file from the assets. Confirm the version on the Settings screen after flashing.
 The source archive contains the application, firmware configuration, build
 scripts and instructions.
+
+This hardware-test revision adds a modern native interface, nested settings,
+automatic host mode and black boot splash. Art-based color extraction is built,
+but retrieving artwork from a stock iPod remains unimplemented until the iPod
+control protocol is confirmed working on physical hardware.
 
 This build passes ARM64 Cortex-A53 boot under emulation, systemd startup,
 native Wayland/Weston rendering, browsing, recovery-log download, ALSA null-device

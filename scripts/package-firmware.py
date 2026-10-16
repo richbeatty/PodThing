@@ -12,6 +12,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 out = root / 'build/direct'
 dist = root / 'dist'
 version = '0.1.0'
+release_version = os.environ.get('PODTHING_VERSION', '0.1.0-test')
 artifacts = ['superbird-boot.bin', 'superbird.wic']
 for name in artifacts:
     if not (out / name).is_file():
@@ -25,7 +26,7 @@ def sha(path):
     return h.hexdigest()
 
 meta = {
-    'metadataVersion': 2, 'name': 'podthing-image', 'version': version,
+    'metadataVersion': 2, 'name': 'podthing-image', 'version': release_version,
     'description': 'Independent PodThing iPod controller firmware for Spotify Car Thing; hardware-test build.',
     'steps': [
         {'type': 'bulkcmd', 'value': 'amlmmc key'},
@@ -34,7 +35,8 @@ meta = {
     ],
 }
 info = {
-    'version': version, 'built_at_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'version': release_version, 'built_at_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
     'architecture': 'aarch64', 'kernel': (out / 'kernel-out/include/config/kernel.release').read_text().strip(),
     'sources': json.loads((root / 'firmware/direct/sources.json').read_text()),
     'artifact_sha256': {name: sha(out / name) for name in artifacts},

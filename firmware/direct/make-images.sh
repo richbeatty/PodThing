@@ -17,6 +17,17 @@ depmod -b "$root" "$release"
 cp "$out/kernel-out/.config" "$root/usr/share/podthing/kernel.config"
 install -m0644 /work/THIRD_PARTY.md "$root/usr/share/podthing/THIRD_PARTY.md"
 mkdir -p "$out/boot-tree/extlinux"
+# U-Boot prefers /logo.bmp on the active or backup boot partition.
+# A plain black screen overrides ThingLabs art without altering U-Boot.
+python3 - "$out/boot-tree/logo.bmp" <<'PYLOGO'
+import pathlib, struct, sys
+w, h = 800, 480
+stride = (w * 3 + 3) & ~3
+n = stride * h
+header = (b'BM' + struct.pack('<IHHI', 54 + n, 0, 0, 54)
+          + struct.pack('<IiiHHIIiiII', 40, w, h, 1, 24, 0, n, 2835, 2835, 0, 0))
+pathlib.Path(sys.argv[1]).write_bytes(header + bytes(n))
+PYLOGO
 cp "$out/kernel-out/arch/arm64/boot/Image" "$out/boot-tree/extlinux/Image"
 cp "$out/kernel-out/arch/arm64/boot/dts/amlogic/meson-g12a-superbird.dtb" "$out/boot-tree/extlinux/"
 cat > "$out/boot-tree/extlinux/extlinux.conf" <<'CONF'
@@ -28,6 +39,7 @@ CONF
 truncate -s 64M "$out/boot.img"
 mkfs.vfat -n PODBOOT "$out/boot.img"
 mcopy -i "$out/boot.img" -s "$out/boot-tree/extlinux" ::/
+mcopy -i "$out/boot.img" "$out/boot-tree/logo.bmp" ::/logo.bmp
 cp /work/sources/yocto-superbird/meta-superbird/recipes-bsp/superbird-uenv/files/uboot-env.txt "$out/uboot-env.txt"
 mkenvimage -s 0x10000 -o "$out/uboot.env" "$out/uboot-env.txt"
 truncate -s 8M "$out/env.img"

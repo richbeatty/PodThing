@@ -1,5 +1,6 @@
 #!/bin/sh
-# PodThing's transient USB role switch. Always boots in recovery/device mode.
+# PodThing's transient USB role switch. The service boots in host mode;
+# selecting computer recovery temporarily changes to USB device mode.
 set -eu
 role_path=
 for path in /sys/class/usb_role/*/role; do

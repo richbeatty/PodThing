@@ -1,11 +1,11 @@
 [Unit]
-Description=PodThing USB recovery network
+Description=PodThing automatic USB host
 After=systemd-udev-trigger.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/superbird-usb-role to-device
+ExecStart=/usr/bin/superbird-usb-role to-host --no-revert
 TimeoutStartSec=10
 
 [Install]
