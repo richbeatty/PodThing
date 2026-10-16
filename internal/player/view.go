@@ -91,6 +91,9 @@ func BuildView(s Snapshot) View {
 			}
 			v.Rows = append(v.Rows, Row{p.Name, kind + " " + p.ID, Action{Name: "rescan"}})
 		}
+		if s.Error != "" {
+			v.Rows = append(v.Rows, Row{"Last connection error", s.Error, Action{Name: "diagnostics"}})
+		}
 		v.Rows = append(v.Rows, Row{"Back to library", "USB role: " + s.HostRole, Action{Name: "back"}})
 	case "playing":
 		v.Title = "Now Playing"

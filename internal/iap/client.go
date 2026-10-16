@@ -117,8 +117,10 @@ func (c *Client) request(p Packet, response uint16) (Packet, error) {
 func (c *Client) Handshake() (string, error) {
 	// Legacy Identify (lingo 0, command 1, mode 4) avoids advertising credentials
 	// or licensed digital-audio capabilities we do not possess.
-	if _, e := c.request(Packet{Lingo: 0, Command: 1, Data: []byte{4}}, 0); e != nil {
-		return "", e
+	// Legacy Identify announces the accessory but receives no ACK.
+	// Waiting for one caused a timeout before remote control mode started.
+	if e := c.send(Packet{Lingo: 0, Command: 1, Data: []byte{4}}); e != nil {
+		return "", fmt.Errorf("identify iPod: %w", e)
 	}
 	if _, e := c.request(Packet{Lingo: 0, Command: 5}, 0); e != nil {
 		return "", e
@@ -131,6 +133,11 @@ func (c *Client) Handshake() (string, error) {
 }
 func (c *Client) Close() error {
 	_, _ = c.request(Packet{Lingo: 0, Command: 6}, 0)
+	// Deliberate disconnect restores the original USB configuration.
+	// Aborting a failed handshake must not cause a mass-storage bounce.
+	if r, ok := c.wire.(interface{ RestoreOriginalOnClose() }); ok {
+		r.RestoreOriginalOnClose()
+	}
 	return c.wire.Close()
 }
 func (c *Client) Abort() error { return c.wire.Close() }

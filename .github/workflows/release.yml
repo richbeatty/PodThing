@@ -3,6 +3,7 @@ name: Publish PodThing hardware test
 on:
   push:
     tags: ['podthing-v0.1.0-test*']
+    branches: ['podthing-release-0.1.0-test']
 
 permissions:
   contents: write
@@ -52,12 +53,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            target=(--verify-tag)
+          else
+            # Branch pushes are hardware-test iterations. Release only after
+            # firmware and QEMU smoke tests have completed successfully.
+            tag="podthing-v0.1.0-test.${GITHUB_RUN_NUMBER}"
+            target=(--target "$GITHUB_SHA")
+          fi
+          gh release create "$tag" \
             dist/podthing-0.1.0-flashthing.zip \
             dist/podthing-0.1.0-flashthing.zip.sha256 \
             dist/podthing-0.1.0-source.tar.gz \
-            --verify-tag --prerelease \
-            --title 'PodThing 0.1.0 — hardware-test prerelease' \
+            "${target[@]}" --prerelease \
+            --title 'PodThing 0.1.0 - hardware-test prerelease' \
             --notes-file build/direct/release-notes.md
       - name: Keep failure diagnostics
         if: failure()
