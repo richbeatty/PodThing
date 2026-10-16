@@ -12,6 +12,7 @@ for target in arm64 arm; do
     CGO_ENABLED=0 GOOS=linux GOARCH="$target" "$GO" build -trimpath -ldflags="$LDFLAGS" -o "dist/podthing-linux-$target" ./cmd/podthing
 done
 CGO_ENABLED=0 "$GO" build -trimpath -ldflags="$LDFLAGS" -o dist/podthing-host ./cmd/podthing
+dist/podthing-host --demo --screenshot dist/podthing-ui-preview.png
 cp scripts/run-on-prelude.sh dist/run-on-prelude.sh
 cp docs/DEVICE-TEST.md dist/DEVICE-TEST.md
 cp THIRD_PARTY.md dist/THIRD_PARTY.md
