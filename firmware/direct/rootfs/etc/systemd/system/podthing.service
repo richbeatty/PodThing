@@ -1,0 +1,17 @@
+[Unit]
+StartLimitIntervalSec=0
+Description=PodThing iPod controller
+After=podthing-weston.service podthing-usb.service
+Wants=podthing-weston.service podthing-usb.service
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/weston
+Environment=WAYLAND_DISPLAY=wayland-1
+StateDirectory=podthing
+ExecStart=/usr/bin/podthing --state-dir=/var/lib/podthing --listen=0.0.0.0:8787
+Restart=always
+RestartSec=2
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

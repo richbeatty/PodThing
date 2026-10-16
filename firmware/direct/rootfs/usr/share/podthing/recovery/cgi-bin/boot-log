@@ -1,0 +1,8 @@
+#!/bin/sh
+printf 'Content-Type: text/plain; charset=utf-8\r\nContent-Disposition: attachment; filename="podthing-boot-log.txt"\r\nCache-Control: no-store\r\n\r\n'
+printf 'PodThing boot diagnostics\n\n'
+uname -a
+printf '\nStartup units\n'
+systemctl --no-pager --full status podthing.service podthing-weston.service podthing-usb.service podthing-boot-healthy.service 2>&1
+printf '\nRecent boot journal\n'
+journalctl -b --no-pager -n 400 2>&1

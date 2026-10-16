@@ -1,0 +1,51 @@
+name: Build PodThing
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      firmware:
+        description: Build the complete standalone firmware (long cold build)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: true
+      - name: App tests
+        run: |
+          go test -race ./...
+          go vet ./...
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: App binaries
+        run: sh scripts/build.sh
+      - name: Standalone firmware
+        if: github.event_name == 'workflow_dispatch' && inputs.firmware
+        run: |
+          sh scripts/build-firmware.sh
+          python3 scripts/test-firmware-boot.py
+      - name: Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: podthing-build
+          if-no-files-found: error
+          path: |
+            dist/podthing-0.1.0-test.tar.gz
+            dist/podthing-0.1.0-flashthing.zip
+            dist/podthing-0.1.0-flashthing.zip.sha256
+            build/direct/manifests/
+            build/direct/qemu-boot.log
+            build/direct/arm64-smoke.log

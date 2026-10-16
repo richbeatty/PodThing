@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PodThing · Device console</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080b0f;color:#f2f4f8;font:15px system-ui,sans-serif;min-height:100vh;display:grid;place-content:center;padding:24px}main{width:min(900px,calc(100vw - 48px))}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;color:#90a0b1}header strong{color:#fff;font-size:20px}#screen{display:block;width:100%;aspect-ratio:5/3;border:1px solid #313843;border-radius:18px;background:#0c0f13;touch-action:none;user-select:none}nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}button,a{font:inherit;border:1px solid #313843;background:#171c23;color:#f2f4f8;padding:10px 14px;border-radius:9px;text-decoration:none;cursor:pointer}button:hover,a:hover{border-color:#ffa64c}button:focus-visible,a:focus-visible{outline:2px solid #ffa64c}p{color:#90a0b1;line-height:1.6}#error{min-height:24px;color:#ff897b}details{margin-top:12px}pre{white-space:pre-wrap;max-height:240px;overflow:auto;color:#90a0b1;font-size:12px}kbd{border:1px solid #313843;border-radius:4px;padding:1px 4px}#mode{color:#ffa64c}
+</style>
+<main>
+<header><strong>PodThing</strong><span id="mode">Device console</span></header>
+<img id="screen" src="/frame.png" draggable="false" alt="Interactive PodThing touchscreen. Use the buttons below or keyboard navigation.">
+<nav aria-label="Hardware controls"><button data-name="preset1">1</button><button data-name="preset2">2</button><button data-name="preset3">3</button><button data-name="preset4">4</button><button data-name="back">Back</button><button data-name="scroll" data-value="-1">↑</button><button data-name="select">Select</button><button data-name="scroll" data-value="1">↓</button><button data-name="settings">Settings</button><button data-name="diagnostics">USB & Audio</button><a href="/api/report" download>Download report</a></nav>
+<div id="error" role="status"></div>
+<p>Touch or click the display. Scroll with your mouse wheel. Keyboard: <kbd>1–4</kbd> presets, <kbd>↑ ↓</kbd> browse, <kbd>Enter</kbd> select, <kbd>Esc</kbd> back, <kbd>Space</kbd> play/pause, <kbd>S</kbd> settings.</p>
+<details><summary>Connection log</summary><pre id="log"></pre></details>
+</main>
+<script>
+const screen=document.querySelector('#screen'),error=document.querySelector('#error');
+async function action(name,value=0,text=''){try{const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,value,text})});const data=await r.json();error.textContent=data.error||''}catch(e){error.textContent=String(e)}}
+document.querySelectorAll('button[data-name]').forEach(b=>b.onclick=()=>action(b.dataset.name,Number(b.dataset.value||0)));
+let start;screen.addEventListener('pointerdown',e=>{start={x:e.clientX,y:e.clientY};screen.setPointerCapture(e.pointerId)});
+screen.addEventListener('pointerup',async e=>{if(!start)return;const dy=e.clientY-start.y;start=null;if(Math.abs(dy)>30){action('scroll',-Math.round(dy/44));return}const r=screen.getBoundingClientRect();try{const response=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'tap',x:Math.floor((e.clientX-r.left)*800/r.width),y:Math.floor((e.clientY-r.top)*480/r.height)})});const result=await response.json();error.textContent=result.error||''}catch(e){error.textContent=String(e)}});
+screen.addEventListener('pointercancel',()=>start=null);let lastWheel=0;screen.addEventListener('wheel',e=>{e.preventDefault();if(Date.now()-lastWheel<70)return;lastWheel=Date.now();action('scroll',Math.sign(e.deltaY))},{passive:false});
+document.addEventListener('keydown',e=>{if(e.repeat||e.target.closest('button,a,input,select'))return;const keys={ArrowUp:['scroll',-1],ArrowDown:['scroll',1],Enter:['select'],Escape:['back'],' ':['play'],s:['settings'],d:['diagnostics'],n:['playing'],'1':['preset1'],'2':['preset2'],'3':['preset3'],'4':['preset4']};if(keys[e.key]){e.preventDefault();action(...keys[e.key])}});
+async function refresh(){try{const r=await fetch('/api/state');const s=await r.json();document.querySelector('#mode').textContent=s.demo?'DEMO · no physical iPod or audio':s.connected?'iPod control connected':'Hardware test';document.querySelector('#log').textContent=s.log.join('\n');screen.src='/frame.png?t='+Date.now()}catch(e){error.textContent='Connection to PodThing lost'}setTimeout(refresh,500)}refresh();
+</script>
+</html>

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+systemctl is-active --quiet podthing.service podthing-weston.service
+/usr/bin/busybox wget -q -O /dev/null http://127.0.0.1:8787/api/state
+slot=
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in superbird.slot=a) slot=a ;; superbird.slot=b) slot=b ;; esac
+done
+[ -n "$slot" ] || { echo 'Missing boot slot' >&2; exit 1; }
+# One write after startup, rather than wearing flash with periodic writes.
+/usr/bin/fw_setenv "slot_${slot}_tries" 3

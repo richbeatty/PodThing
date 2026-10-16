@@ -1,0 +1,12 @@
+[Unit]
+Description=PodThing USB recovery network
+After=systemd-udev-trigger.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/superbird-usb-role to-device
+TimeoutStartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,72 @@
+name: Publish PodThing hardware test
+
+on:
+  push:
+    tags: ['podthing-v0.1.0-test']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: podthing-hardware-test-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: true
+      - name: Application checks and binaries
+        shell: bash
+        run: |
+          go test -race ./...
+          go vet ./...
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          sh scripts/build.sh
+      - name: Build complete firmware
+        shell: bash
+        run: |
+          mkdir -p build/direct
+          sh scripts/build-firmware.sh 2>&1 | tee build/direct/firmware-build.log
+      - name: Boot ARM64 firmware and exercise native app
+        shell: bash
+        run: |
+          python3 scripts/test-firmware-boot.py 2>&1 | tee build/direct/boot-smoke-result.log
+          (cd dist && sha256sum -c podthing-0.1.0-flashthing.zip.sha256)
+      - name: Package source and release notes
+        shell: bash
+        run: |
+          tar --exclude=__pycache__ --exclude='*.pyc' -czf dist/podthing-0.1.0-source.tar.gz \
+            README.md THIRD_PARTY.md .gitignore go.mod go.sum .github cmd internal scripts firmware docs
+          cp docs/RELEASE-0.1.0.md build/direct/release-notes.md
+          printf '\nInstaller SHA-256:\n\n```text\n' >> build/direct/release-notes.md
+          cat dist/podthing-0.1.0-flashthing.zip.sha256 >> build/direct/release-notes.md
+          printf '```\n' >> build/direct/release-notes.md
+      - name: Publish prerelease with downloadable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/podthing-0.1.0-flashthing.zip \
+            dist/podthing-0.1.0-flashthing.zip.sha256 \
+            dist/podthing-0.1.0-source.tar.gz \
+            --verify-tag --prerelease \
+            --title 'PodThing 0.1.0 — hardware-test prerelease' \
+            --notes-file build/direct/release-notes.md
+      - name: Keep failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: podthing-release-diagnostics
+          if-no-files-found: ignore
+          path: |
+            build/direct/firmware-build.log
+            build/direct/boot-smoke-result.log
+            build/direct/qemu-boot.log
+            build/direct/arm64-smoke.log

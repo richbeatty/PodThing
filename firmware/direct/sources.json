@@ -1,0 +1,6 @@
+{
+  "bsp": {"url": "https://github.com/JoeyEamigh/yocto-superbird.git", "commit": "bcba74441aa9e35b3a07cc8f087277e8281a5a46", "path": "sources/yocto-superbird"},
+  "kernel": {"url": "https://github.com/gregkh/linux.git", "commit": "bff90486aa66dbad83a0777f3c17e34fcf26a3e5", "path": "build/direct/kernel"},
+  "uboot": {"url": "https://github.com/ThingLabsOSS/superbird-uboot.git", "commit": "89aaad01944b8f9c3962b6a5695b453e5d5e1bb7", "path": "build/direct/uboot"},
+  "fip": {"url": "https://github.com/ThingLabsOSS/superbird-fip-tools.git", "commit": "b1992a16cc9aa393920b701d1d39c3fedfb68d8d", "path": "build/direct/fip-tools"}
+}

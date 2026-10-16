@@ -1,0 +1,10 @@
+[Unit]
+Description=Mark PodThing boot successful
+After=podthing.service
+RequiresMountsFor=/mnt/uboot-env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/podthing/boot-healthy
+Restart=on-failure
+RestartSec=30

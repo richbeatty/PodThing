@@ -1,0 +1,9 @@
+/dist/
+/podthing-state/
+/podthing
+*.test
+/build/
+/sources/
+/ccache/
+__pycache__/
+*.pyc

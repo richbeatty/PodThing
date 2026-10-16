@@ -1,0 +1,9 @@
+[Unit]
+Description=Verify PodThing startup before resetting boot tries
+
+[Timer]
+OnBootSec=60
+Unit=podthing-boot-healthy.service
+
+[Install]
+WantedBy=timers.target

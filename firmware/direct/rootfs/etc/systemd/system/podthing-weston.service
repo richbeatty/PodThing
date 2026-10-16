@@ -1,0 +1,18 @@
+[Unit]
+StartLimitIntervalSec=0
+Description=PodThing display compositor
+After=systemd-udev-trigger.service seatd.service
+Wants=seatd.service
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/weston
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=LIBSEAT_BACKEND=seatd
+RuntimeDirectory=weston
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/weston --config=/etc/podthing/weston.ini --socket=wayland-1 --renderer=pixman
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

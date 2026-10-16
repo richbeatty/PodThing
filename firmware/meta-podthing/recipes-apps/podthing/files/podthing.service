@@ -1,0 +1,18 @@
+[Unit]
+Description=PodThing iPod controller
+After=var.mount superbird-weston.service superbird-usb-gadget.service
+Requires=var.mount
+Wants=superbird-weston.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/weston
+Environment=WAYLAND_DISPLAY=wayland-1
+StateDirectory=podthing
+ExecStart=/usr/lib/podthing/podthing-start
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,50 @@
+# Independent PodThing image. No Prelude or bridgething application layer.
+header:
+  version: 18
+  includes:
+    - repo: yocto-superbird
+      file: kas/superbird.yml
+
+distro: podthing
+machine: superbird
+target:
+  - podthing-image
+
+repos:
+  podthing:
+    path: .
+    layers:
+      firmware/meta-podthing:
+  yocto-superbird:
+    url: https://github.com/JoeyEamigh/yocto-superbird.git
+    commit: bcba74441aa9e35b3a07cc8f087277e8281a5a46
+    path: sources/yocto-superbird
+    layers:
+      meta-superbird:
+  # Official GitHub mirrors, retaining the exact upstream pinned commits.
+  bitbake:
+    url: https://github.com/openembedded/bitbake.git
+  openembedded-core:
+    url: https://github.com/openembedded/openembedded-core.git
+  meta-yocto:
+    url: https://github.com/yoctoproject/meta-yocto.git
+  meta-openembedded:
+    url: https://github.com/openembedded/meta-openembedded.git
+
+local_conf_header:
+  podthing: |
+    PODTHING_SOURCE_DIR = "${TOPDIR}/../.."
+    BB_NUMBER_THREADS = "4"
+    PARALLEL_MAKE = "-j4"
+    RM_WORK_EXCLUDE = ""
+    BB_DISKMON_DIRS = "STOPTASKS,${TMPDIR},3G,100K HALT,${TMPDIR},1G,50K"
+    # A bounded local build does not depend on a private hash-equivalence server.
+    BB_SIGNATURE_HANDLER = "OEBasicHash"
+    BB_HASHSERVE = ""
+    BB_HASHSERVE_UPSTREAM = ""
+    CONNECTIVITY_CHECK_URIS = "https://github.com/"
+    UNINATIVE_URL = "https://downloads.yoctoproject.org/releases/uninative/${UNINATIVE_VERSION}/"
+    SSTATE_MIRRORS = "file://.* https://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH"
+    PREMIRRORS = ""
+    # No passwordless remote root login in this product image.
+    EXTRA_IMAGE_FEATURES = ""

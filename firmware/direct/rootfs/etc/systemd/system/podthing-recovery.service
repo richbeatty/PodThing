@@ -1,0 +1,12 @@
+[Unit]
+Description=PodThing boot diagnostic download
+After=podthing-usb.service
+Wants=podthing-usb.service
+
+[Service]
+ExecStart=/usr/bin/busybox httpd -f -p 8788 -h /usr/share/podthing/recovery
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
