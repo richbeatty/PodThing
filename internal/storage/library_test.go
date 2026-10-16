@@ -99,7 +99,7 @@ func TestRejectMalformedDBAndUnsafePaths(t *testing.T){
 func TestReadNeverWritesDatabase(t *testing.T){
 	root:=t.TempDir()
 	dir:=filepath.Join(root,"iPod_Control","iTunes")
-	if e:=os.MkdirAll(dir,0500);e!=nil{t.Fatal(e)}
+	if e:=os.MkdirAll(dir,0700);e!=nil{t.Fatal(e)}
 	path:=filepath.Join(dir,"iTunesDB")
 	data:=fixture()
 	if e:=os.WriteFile(path,data,0400);e!=nil{t.Fatal(e)}
