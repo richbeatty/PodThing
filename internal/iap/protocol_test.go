@@ -252,3 +252,36 @@ func TestHIDOutputReportSelectionIndependentOfDescriptorOrder(t *testing.T) {
 		t.Fatalf("wanted fragmentation using largest report, got %d: %v",len(reports),err)
 	}
 }
+
+func TestAuthenticationDetailsDoNotLogChallenge(t *testing.T) {
+	secret := []byte{11,22,33,44,55}
+	w := &scriptWire{t:t,script:[]exchange{
+		{Packet{Lingo:0,Command:1,Data:[]byte{4}},nil},
+		{Packet{Lingo:0,Command:3},[]Packet{{Lingo:0,Command:0x17,Data:secret}}},
+	}}
+	var logs []string
+	_,err:=New(w,func(s string){logs=append(logs,s)}).Handshake()
+	var challenge *AuthenticationRequest
+	if !errors.As(err,&challenge) || challenge.Command!=0x17 || challenge.Length!=len(secret) || !errors.Is(err,ErrAuthentication) {
+		t.Fatalf("wanted typed MFi signature request, got %v",err)
+	}
+	for _,l:=range logs {
+		if strings.Contains(l,"11 22 33") || strings.Contains(l,"0b1621") {t.Fatal("authentication challenge leaked to logs")}
+	}
+}
+func TestSimpleRemoteCompatibilitySequence(t *testing.T) {
+	w:=&scriptWire{t:t,script:[]exchange{
+		{Packet{Lingo:0,Command:1,Data:[]byte{2}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0x01}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0x08}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0x10}},nil},
+		{Packet{Lingo:2,Command:0,Data:[]byte{0}},nil},
+	}}
+	c:=New(w,nil)
+	if err:=c.BeginSimpleRemote();err!=nil{t.Fatal(err)}
+	for _,k:=range []string{"play","next","previous"}{if err:=c.SimpleRemoteKey(k);err!=nil{t.Fatal(err)}}
+	if len(w.script)!=0 {t.Fatalf("unused commands %d",len(w.script))}
+	if err:=c.SimpleRemoteKey("artwork");err==nil{t.Fatal("accepted non-simple remote command")}
+}

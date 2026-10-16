@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+// AuthenticationRequest describes the precise challenge without recording
+// certificate material, private keys or the challenge bytes.
+type AuthenticationRequest struct {
+	Command uint16
+	Length  int
+}
+func (e *AuthenticationRequest) Error() string {
+	switch e.Command {
+	case 0x14:
+		return "iPod requested MFi accessory certificate (iAP 00/0014)"
+	case 0x17:
+		return fmt.Sprintf("iPod requested MFi authentication signature (iAP 00/0017, %d challenge bytes)", e.Length)
+	default:
+		return fmt.Sprintf("iPod requested authentication (iAP 00/%04x)", e.Command)
+	}
+}
+func (e *AuthenticationRequest) Unwrap() error { return ErrAuthentication }
+
 type Transport interface {
 	Send([]byte) error
 	Receive(context.Context) ([]byte, error)
@@ -69,7 +87,9 @@ func (c *Client) receive(ctx context.Context) (Packet, error) {
 			continue
 		}
 		if p.Lingo == 0 && (p.Command == 0x14 || p.Command == 0x17) {
-			return Packet{}, ErrAuthentication
+			challenge := &AuthenticationRequest{Command: p.Command, Length: len(p.Data)}
+			c.log("AUTH " + challenge.Error())
+			return Packet{}, challenge
 		}
 		if p.Lingo == 0x0a && p.Command == 2 {
 			if e = c.send(Packet{Lingo: 0x0a, Command: 3, Data: U32(44100)}); e != nil {
@@ -113,7 +133,8 @@ func (c *Client) request(p Packet, response uint16) (Packet, error) {
 				continue
 			}
 			if status == 7 {
-				return Packet{}, ErrAuthentication
+				c.log(fmt.Sprintf("AUTH iPod rejected request %02x/%04x: not authenticated (ACK 0x07)", p.Lingo, p.Command))
+				return Packet{}, fmt.Errorf("%w: request %02x/%04x rejected as not authenticated (ACK 0x07)", ErrAuthentication, p.Lingo, p.Command)
 			}
 			if status != 0 {
 				return Packet{}, fmt.Errorf("iPod rejected %02x/%04x: status 0x%02x", p.Lingo, p.Command, status)
@@ -182,6 +203,43 @@ func (c *Client) Close() error {
 	return c.wire.Close()
 }
 func (c *Client) Abort() error { return c.wire.Close() }
+
+// BeginSimpleRemote is an explicit compatibility test, not MFi bypass.
+// Legacy Identify with lingo 2 resets Extended Interface negotiation; it
+// advertises only the simple remote control capability. No ACK is expected.
+func (c *Client) BeginSimpleRemote() error {
+	c.log("STAGE iAP1: trying legacy Simple Remote, no MFi capabilities")
+	if err := c.send(Packet{Lingo: 0, Command: 1, Data: []byte{2}}); err != nil {
+		return fmt.Errorf("iAP Simple Remote Identify: %w", err)
+	}
+	return nil
+}
+
+// SimpleRemoteKey sends an unacknowledged button press and a separate release.
+// A successful transfer proves only that Linux sent both packets, not that the
+// stock iPod accepted them. iAP1 Simple Remote lingo 02 command 00.
+func (c *Client) SimpleRemoteKey(key string) error {
+	mask := byte(0)
+	switch key {
+	case "play":
+		mask = 0x01 // play / pause key
+	case "next":
+		mask = 0x08 // right / next
+	case "previous":
+		mask = 0x10 // left / previous
+	default:
+		return fmt.Errorf("unsupported Simple Remote key %q", key)
+	}
+	c.log("STAGE iAP1: sending Simple Remote " + key + " (unacknowledged)")
+	if err := c.send(Packet{Lingo: 2, Command: 0, Data: []byte{mask}}); err != nil {
+		return fmt.Errorf("Simple Remote %s press: %w", key, err)
+	}
+	// Release even when subsequent operations fail, to avoid held buttons.
+	if err := c.send(Packet{Lingo: 2, Command: 0, Data: []byte{0}}); err != nil {
+		return fmt.Errorf("Simple Remote %s release: %w", key, err)
+	}
+	return nil
+}
 
 // RequestDigitalAudio advertises USB digital-audio support explicitly. A real
 // authentication challenge is returned to the UI, never answered with fake data.

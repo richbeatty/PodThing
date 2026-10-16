@@ -7,7 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/richbeatty/PodThing/internal/iap"
 )
 
 func demoApp(t *testing.T) *App {
@@ -164,4 +167,19 @@ func TestSettingsRemovedFromTopRight(t *testing.T) {
 	if a.Snapshot().Screen!="library" {t.Fatal("unexpected navigation")}
 	if err:=a.Action(Action{Name:"tap",X:29,Y:443});err!=nil {t.Fatal(err)}
 	if a.Snapshot().Screen!="settings" {t.Fatal("footer settings button not active")}
+}
+
+func TestAuthDiagnosticDoesNotClaimConnection(t *testing.T) {
+	a:=demoApp(t)
+	err:=&iap.AuthenticationRequest{Command:0x14}
+	a.mu.Lock()
+	a.s.Status="iAP1: checking remote UI mode"
+	a.mu.Unlock()
+	a.recordAuthentication(err,true)
+	s:=a.Snapshot()
+	if s.Connected || !s.AuthRequired || s.BasicRemote || s.AuthStage!="iAP1: checking remote UI mode" {
+		t.Fatalf("invalid auth diagnostic state: %+v",s)
+	}
+	if s.Screen!="settings-usb" || !strings.Contains(s.AuthDetail,"0014") {t.Fatal("authentication request not visible in Connection settings")}
+	if err:=a.Action(Action{Name:"probe-basic"});err==nil {t.Fatal("demo must not access physical USB Simple Remote")}
 }

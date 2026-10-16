@@ -33,6 +33,11 @@ type Snapshot struct {
 	Version     string            `json:"version"`
 	Demo        bool              `json:"demo"`
 	Connected   bool              `json:"connected"`
+	AuthRequired bool             `json:"auth_required"`
+	AuthDetail   string           `json:"auth_detail,omitempty"`
+	AuthStage    string           `json:"auth_stage,omitempty"`
+	BasicRemote  bool             `json:"basic_remote"`
+	BasicLast    string           `json:"basic_last,omitempty"`
 	Name        string            `json:"name"`
 	Status      string            `json:"status"`
 	Error       string            `json:"error,omitempty"`
@@ -196,12 +201,39 @@ func (a *App) Close() {
 		a.client = nil
 	}
 }
+// recordAuthentication keeps the transport open for a user-invoked
+// compatibility probe. No MFi success is implied by this diagnostic state.
+func (a *App) recordAuthentication(err error, blocked bool) {
+	a.mu.Lock()
+	stage := a.s.Status
+	a.s.AuthRequired = true
+	a.s.AuthDetail = err.Error()
+	a.s.AuthStage = stage
+	a.s.BasicRemote = false
+	a.s.BasicLast = ""
+	if blocked {
+		a.s.Connected = false
+		a.s.Entries = nil
+		a.s.Total = 0
+	}
+	a.s.Status = "MFi authentication requested; try basic controls in Connection settings"
+	a.s.Screen = "settings-usb"
+	a.s.Focus = 0
+	a.mu.Unlock()
+	a.Log("AUTH captured at " + stage + ": " + err.Error())
+}
 func (a *App) connect() error {
 	if a.s.Demo {
 		return nil
 	}
 	// If remote mode succeeded but the first database query failed, Connect
 	// retries browsing in the existing session instead of reconfiguring USB.
+	if a.client != nil && a.Snapshot().AuthRequired {
+		// Explicit Simple Remote probe and Disconnect are the only safe
+		// choices while authentication is outstanding.
+		a.Log("Authentication pending; no further Extended Interface request sent")
+		return nil
+	}
 	if a.client != nil {
 		a.Log("STAGE iAP1: retrying database without USB reconnect")
 		if err := a.load(); err != nil {
@@ -220,6 +252,11 @@ func (a *App) connect() error {
 	a.s.Entries = nil
 	a.s.Total = 0
 	a.s.Status = "USB: enumerating iPod devices"
+	a.s.AuthRequired = false
+	a.s.AuthDetail = ""
+	a.s.AuthStage = ""
+	a.s.BasicRemote = false
+	a.s.BasicLast = ""
 	a.mu.Unlock()
 	var found []hardware.Device
 	for _, d := range s.USB {
@@ -237,6 +274,11 @@ func (a *App) connect() error {
 	c := iap.New(w, a.Log)
 	name, e := c.Handshake()
 	if e != nil {
+		if errors.Is(e, iap.ErrAuthentication) {
+			a.client = c
+			a.recordAuthentication(e, true)
+			return nil
+		}
 		_ = c.Abort()
 		return e
 	}
@@ -253,6 +295,10 @@ func (a *App) connect() error {
 	a.mu.Unlock()
 	a.Log("STAGE iAP1: loading music database")
 	if err := a.load(); err != nil {
+		if errors.Is(err, iap.ErrAuthentication) {
+			a.recordAuthentication(err, true)
+			return nil
+		}
 		a.mu.Lock()
 		a.s.Status = "iPod control connected; database access failed"
 		a.mu.Unlock()
@@ -421,8 +467,12 @@ func (a *App) Tick() {
 		a.mu.Unlock()
 		return
 	}
-	if a.client != nil {
+	if a.client != nil && s.Connected && !s.BasicRemote {
 		if e := a.refresh(); e != nil {
+			if errors.Is(e, iap.ErrAuthentication) {
+				a.recordAuthentication(e, true)
+				return
+			}
 			a.Log("Playback refresh: " + e.Error())
 			a.mu.Lock()
 			a.s.Error = e.Error()
@@ -489,6 +539,20 @@ func (a *App) Action(v Action) error {
 		switch v.Name {
 		case "connect":
 			return a.connect()
+		case "probe-basic":
+			if s.Demo {
+				return errors.New("Simple Remote testing requires a real iPod")
+			}
+			if a.client == nil || !s.AuthRequired {
+				return errors.New("connect and capture an authentication request first")
+			}
+			if err := a.client.BeginSimpleRemote(); err != nil { return err }
+			a.mu.Lock()
+			a.s.BasicRemote = true
+			a.s.BasicLast = ""
+			a.s.Status = "Simple Remote identified; send a test key and observe the iPod"
+			a.mu.Unlock()
+			return nil
 		case "disconnect":
 			a.audio.Stop()
 			if a.client != nil {
@@ -497,6 +561,11 @@ func (a *App) Action(v Action) error {
 				a.mu.Lock()
 				a.s.Connected = false
 				a.s.Status = "iPod disconnected"
+				a.s.AuthRequired = false
+				a.s.AuthDetail = ""
+				a.s.AuthStage = ""
+				a.s.BasicRemote = false
+				a.s.BasicLast = ""
 				a.s.Entries = nil
 				a.s.Total = 0
 				a.mu.Unlock()
@@ -526,6 +595,17 @@ func (a *App) Action(v Action) error {
 			}
 			if a.client == nil {
 				return errors.New("connect the iPod first")
+			}
+			if s.BasicRemote {
+				if err := a.client.SimpleRemoteKey(v.Name); err != nil { return err }
+				a.mu.Lock()
+				a.s.BasicLast = v.Name
+				a.s.Status = "Sent " + v.Name + " (no ACK); confirm the iPod responded"
+				a.mu.Unlock()
+				return nil
+			}
+			if s.AuthRequired {
+				return errors.New("MFi required for extended controls; choose Try basic remote in Connection")
 			}
 			code := byte(1)
 			if v.Name == "next" {
@@ -598,6 +678,11 @@ func (a *App) Action(v Action) error {
 			}
 			a.mu.Lock()
 			a.s.Connected = false
+			a.s.AuthRequired = false
+			a.s.AuthDetail = ""
+			a.s.AuthStage = ""
+			a.s.BasicRemote = false
+			a.s.BasicLast = ""
 			a.s.Entries = nil
 			a.s.Total = 0
 			a.mu.Unlock()
@@ -614,6 +699,10 @@ func (a *App) Action(v Action) error {
 			a.mu.Unlock()
 			return nil
 		case "digital":
+			if s.AuthRequired && !s.Connected {
+				return errors.New("MFi authentication required before digital audio")
+			}
+			if s.BasicRemote { return errors.New("Simple Remote mode does not support USB digital audio") }
 			if s.Demo {
 				return errors.New("digital audio requires a real iPod")
 			}
@@ -621,6 +710,7 @@ func (a *App) Action(v Action) error {
 				return errors.New("connect the iPod first")
 			}
 			if e := a.client.RequestDigitalAudio(); e != nil {
+				if errors.Is(e, iap.ErrAuthentication) { a.recordAuthentication(e, false); return nil }
 				return e
 			}
 			a.Scan()

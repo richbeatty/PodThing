@@ -171,3 +171,28 @@ digital audio support.
 If the status stops at USB enumeration, HID claim, remote UI mode, or database
 browsing, report that exact stage/error. The firmware revision is visible in
 Settings > About, which helps exclude a cached/older Terbium ZIP.
+
+## 0.1.0-test.5 authentication compatibility probe
+
+When the stock iPod requests an accessory certificate (iAP general
+`00/0014`), a signature (general `00/0017`), or rejects a command
+with an unauthenticated ACK (status `07`), PodThing records the exact
+request and which connection stage was active. The report and Connection
+settings expose these facts without saving the cryptographic challenge.
+
+Instead of immediately closing the USB HID session, an **explicit**
+Connection > Try Simple Remote action sends legacy Identify for lingo
+`02`, leaving Extended Interface negotiation. The user can then test
+Play/Pause, Next and Previous using Simple Remote lingo `02`,
+command `00` (button press followed by release). These commands have
+**no acknowledgments**; a successful send does **not** prove the iPod
+accepted the buttons. Watch the iPod's own screen and playback to
+determine whether the test worked.
+
+The probe cannot browse the database, retrieve artwork or enable USB
+digital audio. It does not forge a certificate, invent a private key,
+emulate an MFi chip or claim successful authentication. Disconnect
+before attempting a fresh Extended Interface session. If only
+authenticated mode works on stock firmware, a compatible authorized
+MFi authentication provider or a different audio/control architecture
+will be necessary.
