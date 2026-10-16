@@ -2,7 +2,7 @@ name: Publish PodThing hardware test
 
 on:
   push:
-    tags: ['podthing-v0.1.0-test']
+    tags: ['podthing-v0.1.0-test*']
 
 permissions:
   contents: write
