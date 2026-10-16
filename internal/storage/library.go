@@ -135,7 +135,7 @@ func parsePlaylists(b []byte,start,end int) ([]Playlist,error) {
 		}
 		// Exclude the built-in master playlist; its track list duplicates
 		// the entire library and is not a user-created playlist.
-		if p.Name!="" && len(p.IDs)>0 && len(out)<10000 {
+		if u32(b,cursor+20)!=1 && p.Name!="" && len(p.IDs)>0 && len(out)<10000 {
 			out=append(out,p)
 		}
 		cursor+=tp
