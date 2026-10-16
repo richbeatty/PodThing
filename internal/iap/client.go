@@ -18,9 +18,9 @@ type AuthenticationRequest struct {
 func (e *AuthenticationRequest) Error() string {
 	switch e.Command {
 	case 0x14:
-		return "iPod requested MFi accessory certificate (iAP 00/0014)"
+		return "00/0014: MFi certificate requested"
 	case 0x17:
-		return fmt.Sprintf("iPod requested MFi authentication signature (iAP 00/0017, %d challenge bytes)", e.Length)
+		return fmt.Sprintf("00/0017: MFi signature requested (%d bytes)", e.Length)
 	default:
 		return fmt.Sprintf("iPod requested authentication (iAP 00/%04x)", e.Command)
 	}
