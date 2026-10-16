@@ -131,6 +131,11 @@ func BuildView(s Snapshot) View {
 		}
 	}
 	if s.Screen!="library" {v.Hits=append(v.Hits,Hit{12,10,52,49,Action{Name:"back"}})}
+	if s.Screen=="playing" && s.StorageMode && s.Now.Duration>0 {
+		for i:=0;i<20;i++ {
+			v.Hits=append(v.Hits,Hit{315+i*22,275,22,33,Action{Name:"storage-seek",Value:i*5}})
+		}
+	}
 	if s.Screen=="library"&&!s.Connected {
 		action:="storage-open";if s.HostRole=="device" {action="usb-host"}
 		if s.AuthRequired && !s.BasicRemote {action="diagnostics"}
