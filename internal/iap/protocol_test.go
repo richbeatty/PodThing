@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -129,7 +130,7 @@ func ack(lingo byte, cmd uint16) Packet {
 }
 func TestAccessoryHandshakeAndPagedBrowsing(t *testing.T) {
 	w := &scriptWire{t: t, script: []exchange{
-		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil}, {Packet{Lingo: 0, Command: 5}, []Packet{ack(0, 5)}}, {Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("Test iPod\x00")}}},
+		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil}, {Packet{Lingo: 0, Command: 3}, []Packet{{Lingo: 0, Command: 4, Data: []byte{0}}}}, {Packet{Lingo: 0, Command: 5}, []Packet{{Lingo: 0, Command: 2, Data: []byte{6, 5, 0, 0, 3, 0xe8}}, ack(0, 5)}}, {Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("Test iPod\x00")}}},
 		{Packet{Lingo: 4, Command: 0x16}, []Packet{ack(4, 0x16)}}, {Packet{Lingo: 4, Command: 0x17, Data: []byte{2, 0, 0, 0, 7}}, []Packet{ack(4, 0x17)}}, {Packet{Lingo: 4, Command: 0x18, Data: []byte{3}}, []Packet{{Lingo: 4, Command: 0x19, Data: U32(27)}}},
 		{Packet{Lingo: 4, Command: 0x1a, Data: []byte{3, 0, 0, 0, 25, 0, 0, 0, 2}}, []Packet{{Lingo: 4, Command: 0x1b, Data: append(U32(25), []byte("First\x00")...)}, {Lingo: 4, Command: 0x1b, Data: append(U32(25), []byte("duplicate\x00")...)}, {Lingo: 4, Command: 0x1b, Data: append(U32(26), []byte("Second\x00")...)}}},
 	}}
@@ -147,7 +148,7 @@ func TestAccessoryHandshakeAndPagedBrowsing(t *testing.T) {
 	}
 }
 func TestAuthenticationChallengeIsNotFaked(t *testing.T) {
-	w := &scriptWire{t: t, script: []exchange{{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil}, {Packet{Lingo: 0, Command: 5}, []Packet{{Lingo: 0, Command: 0x14}}}}}
+	w := &scriptWire{t: t, script: []exchange{{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil}, {Packet{Lingo: 0, Command: 3}, []Packet{{Lingo: 0, Command: 0x14}}}}}
 	c := New(w, nil)
 	_, e := c.Handshake()
 	if !errors.Is(e, ErrAuthentication) {
@@ -176,6 +177,7 @@ func TestDigitalAudioCapabilities(t *testing.T) {
 func TestHandshakeWithoutIdentifyAck(t *testing.T) {
 	w := &scriptWire{t: t, script: []exchange{
 		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil},
+		{Packet{Lingo: 0, Command: 3}, []Packet{{Lingo: 0, Command: 4, Data: []byte{0}}}},
 		{Packet{Lingo: 0, Command: 5}, []Packet{ack(0, 5)}},
 		{Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("Classic\x00")}}},
 	}}
@@ -199,5 +201,54 @@ func TestExplicitDisconnectRestoresStorage(t *testing.T) {
 	w := &restoreWire{}
 	if err := New(w, nil).Close(); err != nil || !w.closed || !w.restored {
 		t.Fatalf("explicit close should request original configuration: %+v, %v", w, err)
+	}
+}
+
+func TestIdentifyAlreadyEnteredRemoteMode(t *testing.T) {
+	w := &scriptWire{t: t, script: []exchange{
+		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil},
+		{Packet{Lingo: 0, Command: 3}, []Packet{{Lingo: 0, Command: 4, Data: []byte{1}}}},
+		{Packet{Lingo: 0, Command: 7}, []Packet{{Lingo: 0, Command: 8, Data: []byte("iPod Classic\x00")}}},
+	}}
+	name, err := New(w, nil).Handshake()
+	if err != nil || name != "iPod Classic" || len(w.script) != 0 {
+		t.Fatalf("already-remote handshake: %q %v remaining %d", name, err, len(w.script))
+	}
+}
+
+func TestMissingNameDoesNotResetRemoteMode(t *testing.T) {
+	w := &scriptWire{t: t, script: []exchange{
+		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil},
+		{Packet{Lingo: 0, Command: 3}, []Packet{{Lingo: 0, Command: 4, Data: []byte{1}}}},
+		{Packet{Lingo: 0, Command: 7}, nil},
+	}}
+	name, err := New(w, nil).Handshake()
+	if err != nil || name != "iPod" { t.Fatalf("name fallback = %q %v", name, err) }
+}
+
+func TestQueryRemoteModeMalformed(t *testing.T) {
+	w := &scriptWire{t: t, script: []exchange{
+		{Packet{Lingo: 0, Command: 1, Data: []byte{4}}, nil},
+		{Packet{Lingo: 0, Command: 3}, []Packet{{Lingo: 0, Command: 4}}},
+	}}
+	_, err := New(w, nil).Handshake()
+	if err == nil || !strings.Contains(err.Error(), "no state byte") { t.Fatalf("malformed response: %v", err) }
+}
+
+func TestHIDOutputReportSelectionIndependentOfDescriptorOrder(t *testing.T) {
+	frame := []byte{1,2,3,4,5,6,7}
+	for _,defs := range [][]Report{
+		{{ID: 1, Bytes: 8, Output: true}, {ID: 2, Bytes: 4, Output: true}, {ID: 3, Bytes: 12, Output: true}},
+		{{ID: 3, Bytes: 12, Output: true}, {ID: 2, Bytes: 4, Output: true}, {ID: 1, Bytes: 8, Output: true}},
+	} {
+		reports,err:=Reports(frame,defs)
+		if err!=nil||len(reports)!=1||reports[0][0]!=1 {
+			t.Fatalf("wanted smallest fitting output report, got %x: %v",reports,err)
+		}
+	}
+	defs:=[]Report{{ID: 1, Bytes: 4, Output: true},{ID: 2, Bytes: 8, Output: true}}
+	reports,err:=Reports(bytes.Repeat([]byte{9},22),defs)
+	if err!=nil||len(reports)!=4||reports[0][0]!=2 {
+		t.Fatalf("wanted fragmentation using largest report, got %d: %v",len(reports),err)
 	}
 }

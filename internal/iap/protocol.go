@@ -153,30 +153,26 @@ func ParseReports(b []byte) ([]Report, error) {
 	return out, nil
 }
 
+// Reports chooses the smallest output report that holds a whole frame, or
+// the largest available report when fragmentation is required. HID
+// descriptors may list their report IDs in any order.
 func Reports(frame []byte, defs []Report) ([][]byte, error) {
-	var best *Report
+	var fit, largest *Report
 	for i := range defs {
 		d := &defs[i]
-		if !d.Output || d.Bytes < 2 {
-			continue
-		}
-		if best == nil || (best.Bytes-1 < len(frame) && d.Bytes > best.Bytes) || (d.Bytes-1 >= len(frame) && d.Bytes < best.Bytes) {
-			best = d
-		}
+		if !d.Output || d.Bytes < 2 { continue }
+		if largest == nil || d.Bytes > largest.Bytes { largest = d }
+		if d.Bytes-1 >= len(frame) && (fit == nil || d.Bytes < fit.Bytes) { fit = d }
 	}
-	if best == nil {
-		return nil, errors.New("iPod exposes no HID output reports")
-	}
+	if largest == nil { return nil, errors.New("iPod exposes no HID output reports") }
+	best := largest
+	if fit != nil { best = fit }
 	var out [][]byte
 	for off := 0; off < len(frame); {
 		n := min(best.Bytes-1, len(frame)-off)
 		control := byte(0)
-		if off > 0 {
-			control |= 1
-		}
-		if off+n < len(frame) {
-			control |= 2
-		}
+		if off > 0 { control |= 1 }
+		if off+n < len(frame) { control |= 2 }
 		r := make([]byte, best.Bytes+1)
 		r[0] = best.ID
 		r[1] = control
