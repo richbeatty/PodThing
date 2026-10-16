@@ -639,6 +639,16 @@ func (a *App) Tick() {
 	}
 	if a.library != nil {
 		_ = a.refresh()
+		if a.player.TakeCompletion() {
+			state:=a.Snapshot()
+			if state.Now.Repeat==1 {
+				if e:=a.playStorage(uint32(a.activeTrack));e!=nil {a.Log("Auto-repeat failed: "+e.Error())}
+			} else if e:=a.storageControl("next");e!=nil {
+				a.mu.Lock()
+				a.s.Status="Finished playlist"
+				a.mu.Unlock()
+			}
+		}
 		return
 	}
 	if a.client != nil && s.Connected && !s.BasicRemote {
@@ -715,6 +725,8 @@ func (a *App) Action(v Action) error {
 			return a.openStorage()
 		case "storage-eject":
 			return a.ejectStorage()
+		case "storage-seek":
+			return a.storageSeek(v.Value)
 		case "connect":
 			return a.connect()
 		case "probe-basic-fresh":
