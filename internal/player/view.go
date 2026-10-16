@@ -13,6 +13,7 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/image/vector"
 )
 
 type Hit struct {
@@ -33,100 +34,99 @@ type View struct {
 
 func (a *App) View() View { return BuildView(a.Snapshot()) }
 func BuildView(s Snapshot) View {
-	v := View{State: s, Title: s.Category}
-	v.Hits = append(v.Hits, Hit{690, 12, 94, 36, Action{Name: "settings"}})
-	for i, c := range Categories {
-		v.Hits = append(v.Hits, Hit{16 + i*194, 62, 186, 40, Action{Name: "navigate", Text: c}})
-	}
+	v := View{State:s,Title:s.Category}
 	switch s.Screen {
 	case "library":
-		v.Caption = fmt.Sprintf("%d items", s.Total)
-		if len(s.Path) > 0 {
-			var names []string
-			for _, p := range s.Path {
-				names = append(names, p.Name)
-			}
-			v.Caption = strings.Join(names, " / ")
-		}
-		for i, e := range s.Entries {
-			v.Rows = append(v.Rows, Row{Title: e.Name, Detail: fmt.Sprintf("%d", e.Index+1), Action: Action{Name: "open", Value: i}})
-		}
-		if len(s.Path) > 0 {
-			v.Hits = append(v.Hits, Hit{16, 111, 45, 40, Action{Name: "back"}})
-		}
+		v.Caption="Browse your music"
+		if s.Total>0 {v.Caption=fmt.Sprintf("%d items",s.Total)}
+		if len(s.Path)>0 {var names []string;for _,p:=range s.Path {names=append(names,p.Name)};v.Caption=strings.Join(names," / ")}
+		for i,c:=range Categories {v.Hits=append(v.Hits,Hit{16+i*194,83,186,43,Action{Name:"navigate",Text:c}})}
+		for i,e:=range s.Entries {v.Rows=append(v.Rows,Row{Title:e.Name,Detail:fmt.Sprintf("%d",int(s.Offset)+i+1),Action:Action{Name:"open",Value:i}})}
 	case "settings":
-		v.Title = "Settings"
-		v.Caption = "Press a row to change its value"
-		for i, b := range s.Settings.Buttons {
-			v.Rows = append(v.Rows, Row{fmt.Sprintf("Top button %d", i+1), b, Action{Name: "remap", Value: i}})
+		v.Title,v.Caption="Settings","Connection, audio and preferences"
+		v.Rows=[]Row{
+			{"Connection & USB","iPod and recovery",Action{Name:"settings-page",Text:"settings-usb"}},
+			{"Audio","Output and digital audio",Action{Name:"settings-page",Text:"settings-audio"}},
+			{"Controls","Wheel and presets",Action{Name:"settings-page",Text:"settings-controls"}},
+			{"About","Version and credits",Action{Name:"settings-page",Text:"settings-about"}},
+			{"Back to music","",Action{Name:"back"}},
 		}
-		direction := "Normal"
-		if s.Settings.InvertWheel {
-			direction = "Reversed"
+	case "settings-usb","diagnostics":
+		v.Title,v.Caption="Connection","USB host, iPod and recovery"
+		v.Rows=[]Row{
+			{"Connect iPod",s.Name,Action{Name:"connect"}},
+			{"Rescan devices",fmt.Sprintf("%d USB devices",len(s.USB)),Action{Name:"rescan"}},
+			{"Enable USB host","Normal iPod use",Action{Name:"usb-host"}},
+			{"Computer recovery","USB diagnostic download",Action{Name:"usb-recovery"}},
+			{"Save diagnostic report","Stored on device",Action{Name:"export"}},
+			{"Disconnect iPod","Release accessory mode",Action{Name:"disconnect"}},
 		}
-		v.Rows = append(v.Rows, Row{"Wheel direction", direction, Action{Name: "invert"}}, Row{"USB & audio diagnostics", "Connection, DAC, reports", Action{Name: "diagnostics"}}, Row{"Back to library", "", Action{Name: "back"}})
-	case "diagnostics":
-		v.Title = "USB & Audio"
-		v.Caption = "Scroll for audio controls and reports"
-		capture, output := s.Settings.Capture, s.Settings.Output
-		if capture == "" {
-			capture = "Not selected"
+		if s.Error!="" {v.Rows=append(v.Rows,Row{"Last error",s.Error,Action{Name:"rescan"}})}
+		for _,d:=range s.USB {if d.IPod {v.Rows=append(v.Rows,Row{"Detected iPod",d.Product+fmt.Sprintf(" / cfg %d",d.Active),Action{Name:"rescan"}})}}
+		v.Rows=append(v.Rows,Row{"Back","",Action{Name:"back"}})
+	case "settings-audio":
+		v.Title,v.Caption="Audio","Playback and output settings"
+		capture,output:=s.Settings.Capture,s.Settings.Output
+		if capture=="" {capture="Not selected"}
+		if output=="" {output="Not selected"}
+		v.Rows=[]Row{
+			{"Request digital audio","iPod accessory mode required",Action{Name:"digital"}},
+			{"iPod audio capture",capture,Action{Name:"capture"}},
+			{"Hub / DAC output",output,Action{Name:"output"}},
+			{"Test DAC tone","3 second test",Action{Name:"tone"}},
+			{"Start audio route","iPod to USB output",Action{Name:"audio-start"}},
+			{"Stop audio",s.AudioStatus,Action{Name:"audio-stop"}},
+			{"Back","",Action{Name:"back"}},
 		}
-		if output == "" {
-			output = "Not selected"
+	case "settings-controls":
+		v.Title,v.Caption="Controls","Customize your hardware buttons"
+		for i,b:=range s.Settings.Buttons {v.Rows=append(v.Rows,Row{fmt.Sprintf("Preset %d",i+1),b,Action{Name:"remap",Value:i}})}
+		direction:="Normal";if s.Settings.InvertWheel {direction="Reversed"}
+		v.Rows=append(v.Rows,Row{"Wheel direction",direction,Action{Name:"invert"}},Row{"Back","",Action{Name:"back"}})
+	case "settings-about":
+		v.Title,v.Caption="About","Firmware and acknowledgments"
+		v.Rows=[]Row{
+			{"Version",s.Version,Action{Name:"settings-page",Text:"settings-about"}},
+			{"Bootloader","ThingLabsOSS Superbird U-Boot",Action{Name:"settings-page",Text:"settings-about"}},
+			{"Kernel and BSP","Joey Eamigh / yocto-superbird",Action{Name:"settings-page",Text:"settings-about"}},
+			{"Artwork colors","Auto when iPod artwork is available",Action{Name:"settings-page",Text:"settings-about"}},
+			{"Back","",Action{Name:"back"}},
 		}
-		v.Rows = []Row{{"Connect iPod", s.Name, Action{Name: "connect"}}, {"Rescan devices", fmt.Sprintf("%d USB / %d PCM", len(s.USB), len(s.Audio)), Action{Name: "rescan"}}, {"Request iPod digital audio", "Authentication may be required", Action{Name: "digital"}}, {"iPod audio capture", capture, Action{Name: "capture"}}, {"Hub / DAC output", output, Action{Name: "output"}}, {"Test DAC tone (3 seconds)", "Tests output only; start with car volume low", Action{Name: "tone"}}, {"Start iPod audio route", "Selected capture to selected DAC", Action{Name: "audio-start"}}, {"Stop audio", s.AudioStatus, Action{Name: "audio-stop"}}, {"Save diagnostic report", "Saved locally; download from browser", Action{Name: "export"}}, {"Disconnect iPod", "Release accessory mode", Action{Name: "disconnect"}}}
-		v.Rows = append(v.Rows, Row{"Enable USB host", "Use a powered OTG hub; role: " + s.HostRole, Action{Name: "usb-host"}}, Row{"USB recovery console", "Connect computer, then open 10.42.1.2:8787", Action{Name: "usb-recovery"}})
-		for _, d := range s.USB {
-			title := d.Product
-			if title == "" {
-				title = d.Vendor + ":" + d.ProductID
-			}
-			v.Rows = append(v.Rows, Row{title, fmt.Sprintf("USB %s / cfg %d", d.Name, d.Active), Action{Name: "rescan"}})
-		}
-		for _, p := range s.Audio {
-			kind := "Output"
-			if p.Capture {
-				kind = "Capture"
-			}
-			v.Rows = append(v.Rows, Row{p.Name, kind + " " + p.ID, Action{Name: "rescan"}})
-		}
-		if s.Error != "" {
-			v.Rows = append(v.Rows, Row{"Last connection error", s.Error, Action{Name: "diagnostics"}})
-		}
-		v.Rows = append(v.Rows, Row{"Back to library", "USB role: " + s.HostRole, Action{Name: "back"}})
 	case "playing":
-		v.Title = "Now Playing"
-		v.Caption = "Playback stays on your iPod"
-		v.Rows = []Row{{"Play / Pause", "", Action{Name: "play"}}, {"Previous track", "", Action{Name: "previous"}}, {"Next track", "", Action{Name: "next"}}, {"Shuffle", []string{"Off", "Songs", "Albums"}[min(int(s.Now.Shuffle), 2)], Action{Name: "shuffle"}}, {"Repeat", []string{"Off", "One", "All"}[min(int(s.Now.Repeat), 2)], Action{Name: "repeat"}}}
-	}
-	if s.Screen != "playing" {
-		v.Start = max(0, min(s.Focus-2, len(v.Rows)-5))
-		for i := v.Start; i < min(len(v.Rows), v.Start+5); i++ {
-			v.Hits = append(v.Hits, Hit{16, 154 + (i-v.Start)*44, 768, 42, v.Rows[i].Action})
-		}
-	} else {
-		for i := 0; i < len(v.Rows); i++ {
-			v.Hits = append(v.Hits, Hit{475, 148 + i*44, 309, 42, v.Rows[i].Action})
+		v.Title,v.Caption="Now Playing","Playback on your iPod"
+		v.Rows=[]Row{
+			{"Play / Pause","",Action{Name:"play"}},
+			{"Previous track","",Action{Name:"previous"}},
+			{"Next track","",Action{Name:"next"}},
 		}
 	}
-	if s.Screen == "library" && !s.Connected {
-		connectAction := "connect"
-		if s.HostRole == "device" {
-			connectAction = "usb-host"
-		}
-		v.Hits = append(v.Hits, Hit{283, 283, 234, 48, Action{Name: connectAction}}, Hit{283, 337, 234, 36, Action{Name: "diagnostics"}})
+	if s.Screen!="library" {v.Hits=append(v.Hits,Hit{12,10,52,49,Action{Name:"back"}})}
+	if s.Screen=="library"&&!s.Connected {
+		action:="connect";if s.HostRole=="device" {action="usb-host"}
+		v.Hits=append(v.Hits,Hit{240,267,320,55,Action{Name:action}})
 	}
-	v.Hits = append(v.Hits, Hit{0, 404, 550, 76, Action{Name: "playing"}}, Hit{556, 417, 64, 48, Action{Name: "previous"}}, Hit{628, 411, 76, 60, Action{Name: "play"}}, Hit{712, 417, 64, 48, Action{Name: "next"}})
+	if s.Screen!="playing" {
+		y,step,visible:=101,50,6
+		if s.Screen=="library" {y,step,visible=134,52,5}
+		v.Start=max(0,min(s.Focus-2,len(v.Rows)-visible))
+		for i:=v.Start;i<min(len(v.Rows),v.Start+visible);i++ {
+			v.Hits=append(v.Hits,Hit{18,y+(i-v.Start)*step,762,step-3,v.Rows[i].Action})
+		}
+	}
+	v.Hits=append(v.Hits,Hit{14,419,53,52,Action{Name:"settings"}},
+		Hit{72,418,490,57,Action{Name:"playing"}},
+		Hit{568,420,61,54,Action{Name:"previous"}},
+		Hit{635,418,73,56,Action{Name:"play"}},
+		Hit{714,420,62,54,Action{Name:"next"}})
 	return v
 }
 
-var bg = color.RGBA{12, 15, 19, 255}
-var panel = color.RGBA{23, 28, 35, 255}
-var line = color.RGBA{39, 45, 55, 255}
+var bg = color.RGBA{10, 14, 21, 255}
+var panel = color.RGBA{28, 35, 45, 255}
+var line = color.RGBA{55, 64, 76, 255}
 var textColor = color.RGBA{242, 244, 248, 255}
-var muted = color.RGBA{144, 157, 174, 255}
-var accent = color.RGBA{255, 166, 76, 255}
+var muted = color.RGBA{151, 166, 184, 255}
+var accent = color.RGBA{96, 154, 255, 255}
 var green = color.RGBA{115, 224, 172, 255}
 
 type Painter struct {
