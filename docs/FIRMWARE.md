@@ -138,3 +138,14 @@ USB recovery networking is unavailable.
 This fixes a known handshake bug but does not guarantee that a particular
 iPod Classic exposes the required USB HID accessory interface or that
 USB digital audio works. Authentication remains unsupported.
+
+## Revision, boot logo and automatic USB host
+
+Each revision has a uniquely named Terbium ZIP and shows its version inside
+Settings. The boot slots contain a full-screen black `logo.bmp` to override
+the upstream ThingLabs splash without changing the signed U-Boot binary.
+Credits remain visible under Settings > About.
+
+USB boots in host mode for the iPod and powered hub. Switch to USB recovery
+mode from Settings > Connection to connect a computer for diagnostic access.
+Hardware recovery using preset buttons 1 + 4 remains available.
