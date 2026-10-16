@@ -57,6 +57,8 @@ func BuildView(s Snapshot) View {
 		v.Rows=[]Row{
 			{"Simple Remote first","150ms press; fresh HID session",Action{Name:"probe-basic-fresh"}},
 			{"Modern accessory probe","No MFi; checks USB iAP1 identification",Action{Name:"probe-accessory"}},
+			{"Open iPod music (read-only)","USB storage, no MFi handshake",Action{Name:"storage-open"}},
+			{"Eject iPod safely","Stop decoder and unmount",Action{Name:"storage-eject"}},
 			{"Connect iPod (legacy)","Existing Extended Interface path",Action{Name:"connect"}},
 			{"Rescan devices",fmt.Sprintf("%d USB devices",len(s.USB)),Action{Name:"rescan"}},
 			{"Enable USB host","Normal iPod use",Action{Name:"usb-host"}},
@@ -129,8 +131,13 @@ func BuildView(s Snapshot) View {
 		}
 	}
 	if s.Screen!="library" {v.Hits=append(v.Hits,Hit{12,10,52,49,Action{Name:"back"}})}
+	if s.Screen=="playing" && s.StorageMode && s.Now.Duration>0 {
+		for i:=0;i<20;i++ {
+			v.Hits=append(v.Hits,Hit{315+i*22,275,22,33,Action{Name:"storage-seek",Value:i*5}})
+		}
+	}
 	if s.Screen=="library"&&!s.Connected {
-		action:="connect";if s.HostRole=="device" {action="usb-host"}
+		action:="storage-open";if s.HostRole=="device" {action="usb-host"}
 		if s.AuthRequired && !s.BasicRemote {action="diagnostics"}
 		v.Hits=append(v.Hits,Hit{240,267,320,55,Action{Name:action}})
 	}
@@ -312,6 +319,10 @@ func (p *Painter) Render(v View) *image.RGBA {
 			head="Accessory authentication required"
 			sub="Open Connection settings for the next probe."
 		}
+		if st.SafeToDisconnect {
+			head="iPod safely unmounted"
+			sub="Safe to unplug the iPod."
+		}
 		if st.BasicRemote {
 			head="Simple Remote test ready"
 			sub="Use playback buttons; watch the iPod."
@@ -319,7 +330,7 @@ func (p *Painter) Render(v View) *image.RGBA {
 		p.text(img,194,209,27,true,textColor,head,550)
 		p.text(img,194,244,16,false,muted,sub,550)
 		round(img,240,267,320,55,17,ac)
-		label:="Connect iPod"
+		label:="Open iPod library"
 		if st.HostRole=="device" {label="Enable USB host"}
 		if st.AuthRequired {label="Connection diagnostics"}
 		p.text(img,327,302,20,true,bg,label,215)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/richbeatty/PodThing/internal/hardware"
 	"github.com/richbeatty/PodThing/internal/iap"
+	"github.com/richbeatty/PodThing/internal/storage"
 )
 
 var Version = "0.1.0-test" // Linked to the firmware revision.
@@ -37,6 +38,8 @@ type Snapshot struct {
 	AuthDetail   string           `json:"auth_detail,omitempty"`
 	AuthStage    string           `json:"auth_stage,omitempty"`
 	BasicRemote  bool             `json:"basic_remote"`
+	StorageMode  bool             `json:"storage_mode"`
+	SafeToDisconnect bool         `json:"safe_to_disconnect"`
 	BasicLast    string           `json:"basic_last,omitempty"`
 	AccessoryProbe bool          `json:"accessory_probe"`
 	ProbeResult string           `json:"probe_result,omitempty"`
@@ -76,6 +79,11 @@ type App struct {
 	op        sync.Mutex
 	s         Snapshot
 	client    *iap.Client
+	volume    *storage.Volume
+	library   *storage.Library
+	player    storage.Playback
+	activeTrack int
+	queue []int
 	audio     hardware.Audio
 	stateDir  string
 	demoTrack int
@@ -201,7 +209,7 @@ func (a *App) run(fn func() error) error {
 	latest := a.Snapshot()
 	// A switch *to* host mode has no iPod session yet. Don't overwrite
 	// the last useful report with an empty post-recovery host snapshot.
-	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || e != nil) {
+	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || a.volume != nil || e != nil) {
 		if se := a.saveSessionReport(); se != nil {
 			a.Log("Could not preserve USB session: " + se.Error())
 		}
@@ -215,6 +223,11 @@ func (a *App) Close() {
 	a.closed = true
 	a.mu.Unlock()
 	a.audio.Stop()
+	if a.volume!=nil {
+		if e:=a.player.Stop();e==nil {
+			if e=a.volume.Eject();e!=nil {a.Log("iPod needs manual safe eject: "+e.Error())}
+		}
+	}
 	if a.client != nil {
 		_ = a.client.Close()
 		a.client = nil
@@ -308,6 +321,66 @@ func (a *App) startProbe(simple bool) error {
 	a.mu.Unlock()
 	return nil
 }
+// openStorage uses only the iPod's USB mass-storage interface. It never
+// sends iAP accessory commands or writes to any iPod filesystem.
+func (a *App) openStorage() error {
+	if a.s.Demo {return errors.New("storage mode requires a real iPod")}
+	if a.volume!=nil{return errors.New("iPod storage is already mounted")}
+	if a.client!=nil {return errors.New("disconnect the iAP session and reconnect the iPod in disk mode")}
+	a.Scan()
+	s:=a.Snapshot()
+	var ipods []hardware.Device
+	for _,d:=range s.USB {if d.IPod {ipods=append(ipods,d)}}
+	if len(ipods)!=1 {return fmt.Errorf("found %d iPods; connect exactly one stock iPod through the USB host hub",len(ipods))}
+	a.Log("STAGE Storage: locking iPod disk read-only before mount")
+	vol,lib,err:=storage.OpenUSB(ipods[0].SysPath)
+	if err!=nil{return err}
+	a.volume=vol
+	a.library=lib
+	a.activeTrack=0
+	a.queue=nil
+	a.mu.Lock()
+	a.s.StorageMode=true
+	a.s.SafeToDisconnect=false
+	a.s.Connected=true
+	a.s.AuthRequired=false
+	a.s.BasicRemote=false
+	a.s.Name="iPod Music (read-only)"
+	a.s.Status=fmt.Sprintf("Read-only music library: %d tracks, %d playlists",len(lib.Tracks),len(lib.Playlists))
+	a.s.Screen="library"
+	a.s.Category="Artists"
+	a.s.Path=nil
+	a.s.Offset=0
+	a.s.Focus=0
+	a.mu.Unlock()
+	a.Log(fmt.Sprintf("STORAGE mounted %s %s read-only; %d tracks, %d playlists",vol.Device,vol.FSType,len(lib.Tracks),len(lib.Playlists)))
+	return a.load()
+}
+func (a *App) ejectStorage() error {
+	if a.volume==nil {return errors.New("no mounted iPod to eject")}
+	if err:=a.player.Stop();err!=nil{return err}
+	// Preserve the last storage session before the state is replaced by
+	// Safe to Disconnect, for recovery-mode diagnostics.
+	if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("preserve storage session before eject: %w",err)}
+	if err:=a.volume.Eject();err!=nil{return err}
+	a.volume=nil
+	a.library=nil
+	a.queue=nil
+	a.mu.Lock()
+	a.s.StorageMode=false
+	a.s.Connected=false
+	a.s.SafeToDisconnect=true
+	a.s.Name=""
+	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
+	a.s.Now=iap.NowPlaying{}
+	a.s.Entries=nil
+	a.s.Total=0
+	a.s.Path=nil
+	a.s.Screen="settings-usb"
+	a.mu.Unlock()
+	a.Log("STORAGE unmounted cleanly; safe for host to unplug")
+	return nil
+}
 func (a *App) connect() error {
 	if a.s.Demo {
 		return nil
@@ -399,6 +472,7 @@ func (a *App) connect() error {
 }
 func (a *App) load() error {
 	s := a.Snapshot()
+	if a.library!=nil {return a.loadStorage(s)}
 	if s.Demo {
 		a.mu.Lock()
 		a.demoBrowse()
@@ -447,6 +521,7 @@ func (a *App) activate(index int) error {
 	}
 	entry := s.Entries[index]
 	if s.Category == "Songs" {
+		if a.library!=nil {return a.playStorage(entry.Index)}
 		if s.Demo {
 			a.mu.Lock()
 			a.demoTrack = int(entry.Index)
@@ -518,6 +593,16 @@ func (a *App) back() error {
 	return a.load()
 }
 func (a *App) refresh() error {
+	if a.library!=nil {
+		track,position,playing,errText:=a.player.State()
+		a.mu.Lock()
+		a.s.Now.Position=position
+		a.s.Now.Playing=playing
+		if errText!="" {a.s.Error=errText}
+		_ = track
+		a.mu.Unlock()
+		return nil
+	}
 	if a.client == nil {
 		return nil
 	}
@@ -553,6 +638,20 @@ func (a *App) Tick() {
 			}
 		}
 		a.mu.Unlock()
+		return
+	}
+	if a.library != nil {
+		_ = a.refresh()
+		if a.player.TakeCompletion() {
+			state:=a.Snapshot()
+			if state.Now.Repeat==1 {
+				if e:=a.playStorage(uint32(a.activeTrack));e!=nil {a.Log("Auto-repeat failed: "+e.Error())}
+			} else if e:=a.storageControl("next");e!=nil {
+				a.mu.Lock()
+				a.s.Status="Finished playlist"
+				a.mu.Unlock()
+			}
+		}
 		return
 	}
 	if a.client != nil && s.Connected && !s.BasicRemote {
@@ -625,6 +724,12 @@ func (a *App) Action(v Action) error {
 	return a.run(func() error {
 		s := a.Snapshot()
 		switch v.Name {
+		case "storage-open":
+			return a.openStorage()
+		case "storage-eject":
+			return a.ejectStorage()
+		case "storage-seek":
+			return a.storageSeek(v.Value)
 		case "connect":
 			return a.connect()
 		case "probe-basic-fresh":
@@ -646,6 +751,7 @@ func (a *App) Action(v Action) error {
 			a.mu.Unlock()
 			return nil
 		case "disconnect":
+			if a.volume!=nil {return a.ejectStorage()}
 			a.audio.Stop()
 			if a.client != nil {
 				e := a.client.Close()
@@ -673,6 +779,7 @@ func (a *App) Action(v Action) error {
 		case "open":
 			return a.activate(v.Value)
 		case "play", "previous", "next":
+			if a.library!=nil {return a.storageControl(v.Name)}
 			if s.Demo {
 				a.mu.Lock()
 				playing := a.s.Now.Playing
@@ -770,6 +877,9 @@ func (a *App) Action(v Action) error {
 			if v.Name=="usb-recovery" && s.HostRole!="device" {
 				if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("save session before recovery: %w",err)}
 			}
+			if a.volume!=nil {
+				if err:=a.ejectStorage();err!=nil {return fmt.Errorf("cannot change USB role until music is safely ejected: %w",err)}
+			}
 			a.audio.Stop()
 			if a.client != nil {
 				_ = a.client.Close()
@@ -847,6 +957,7 @@ func (a *App) Action(v Action) error {
 			a.mu.Unlock()
 			return a.save()
 		case "audio-start":
+			if a.library!=nil {return errors.New("Storage playback uses the selected USB DAC directly; select a song")}
 			if s.Demo {
 				return errors.New("demo mode does not route audio")
 			}

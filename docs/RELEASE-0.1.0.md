@@ -1,3 +1,26 @@
+## Experimental read-only iPod music player
+
+This branch adds a stock-firmware USB storage pathway, **not** an MFi
+authentication bypass. It can mount only the detected iPod's disk
+and partition **read-only** (enforced with BLKROSET), parse legacy
+iTunesDB track and playlist information, browse through the existing
+Car Thing UI, and decode music files via ffmpeg to a selectable USB
+ALSA playback device. It has play/pause, previous/next, seek,
+shuffle and repeat controls, and a guarded **Eject iPod safely** action.
+The device's music files, play counts and iTunesDB are never modified.
+
+No extra accessories are shipped. The previous report was captured **in USB recovery mode**,
+so it cannot establish whether your USB hub provides a DAC while
+connected in host mode. Without a real audio output (or future
+Bluetooth A2DP support), local music playback cannot reach the
+car speakers. Tests validate code, not the actual iPod's partition,
+filesystem and sound output. ArtworkDB is not yet decoded.
+
+Use *Connection → Open iPod music (read-only)* to test. Eject before
+unplugging whenever possible. If no real USB playback PCM is
+detected, the player explains why it can't start audio. The original
+iAP connection mode remains accessible for comparison.
+
 ## 0.1.0-test.6 hardware compatibility probes
 
 - New fresh Simple Remote test without prior Extended Interface handshake;

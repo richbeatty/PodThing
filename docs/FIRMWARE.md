@@ -225,3 +225,42 @@ session. In the recovery browser console, choose **Download saved
 session** (not **Live snapshot**). The saved report survives an app
 restart. If no session was saved, the endpoint reports a clear 404
 instead of silently substituting a recovery-mode report.
+
+## Experimental read-only USB storage player (after test.6)
+
+This is a *different* playback architecture, not MFi authentication.
+With a stock iPod Classic in USB disk mode, **Connection → Open iPod
+music (read-only)** finds a USB storage partition associated with that
+specific iPod, applies Linux BLKROSET to both disk and partition, and
+mounts only `vfat` or `hfsplus` with `MS_RDONLY`, `MS_NOEXEC`,
+`MS_NOSUID` and `MS_NODEV`. It never writes the iTunesDB, music files,
+filesystem journal, play counts or rating data. It never repairs a
+filesystem or retries a read-write mount.
+
+PodThing reads `iPod_Control/iTunes/iTunesDB` into a bounded parser,
+then offers Artists, Albums, Songs and Playlists. Music filenames are
+resolved only beneath the verified mount root. Playback uses the
+ffmpeg decoder to play via a **real ALSA USB DAC output** selected in
+Audio settings. No audio destination is invented. If the hub exposes no
+USB playback PCM, browsing is still possible but listening is not;
+Car Thing originally relied on a phone for its car audio, so this
+hardware check matters. This build doesn't implement Bluetooth A2DP
+transmission or USB audio gadget output to the car.
+
+**Eject iPod safely** stops any decoder process (including paused
+processes), waits for it to release files, saves the diagnostic report,
+and unmounts normally. Only an actually successful unmount displays
+**Safe to disconnect**. If the mount is busy or any step fails,
+PodThing keeps it mounted and shows the error. The iPod may still
+display its own USB/disk-mode screen until the cable is disconnected.
+The kernel read-only block flag also prevents host writes if power is
+lost or the iPod is unplugged during a read.
+
+Limitations: iTunesDB variants and case-sensitive path differences
+need physical Classic testing. Artwork is extracted from audio-file
+embedded pictures when present; iPod-specific ArtworkDB / .ithmb
+images may not appear. Protected DRM tracks cannot be played via
+ffmpeg. The 160 MiB database memory cap prevents an unbounded
+read from overwhelming the device; exceptionally large databases
+need a streaming reader. A safe copy of the music library is
+recommended before trying unfamiliar firmware or hub combinations.
