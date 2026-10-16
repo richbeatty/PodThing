@@ -183,3 +183,62 @@ func TestAuthDiagnosticDoesNotClaimConnection(t *testing.T) {
 	if s.Screen!="settings-usb" || !strings.Contains(s.AuthDetail,"0014") {t.Fatal("authentication request not visible in Connection settings")}
 	if err:=a.Action(Action{Name:"probe-basic"});err==nil {t.Fatal("demo must not access physical USB Simple Remote")}
 }
+
+func TestSavedSessionRetainedThroughRecoveryAndRestart(t *testing.T) {
+	dir:=t.TempDir()
+	a,err:=New(true,dir)
+	if err!=nil{t.Fatal(err)}
+	a.Log("AUTH 00/0014: certificate requested")
+	a.mu.Lock()
+	a.s.AuthRequired=true
+	a.s.AuthDetail="00/0014: certificate requested"
+	a.s.HostRole="host"
+	a.mu.Unlock()
+	if err=a.saveSessionReport();err!=nil{t.Fatal(err)}
+	a.mu.Lock()
+	a.s.AuthRequired=false
+	a.s.AuthDetail=""
+	a.s.HostRole="device"
+	a.s.Log=nil
+	a.mu.Unlock()
+	b,err:=a.SavedSessionReport()
+	if err!=nil{t.Fatal(err)}
+	var saved struct{State Snapshot `json:"state"`}
+	if err=json.Unmarshal(b,&saved);err!=nil{t.Fatal(err)}
+	if saved.State.HostRole!="host"||!saved.State.AuthRequired||!strings.Contains(strings.Join(saved.State.Log," "),"certificate requested"){t.Fatalf("saved report lacked host evidence: %+v",saved.State)}
+	frames:=&Frames{}
+	frames.PNG.Store([]byte{1})
+	w:=httptest.NewRecorder()
+	a.Handler(frames).ServeHTTP(w,httptest.NewRequest("GET","http://localhost/api/report/saved",nil))
+	if w.Code!=200||!bytes.Equal(w.Body.Bytes(),b){t.Fatalf("wrong saved HTTP report: %d",w.Code)}
+	a.Close()
+	second,err:=New(true,dir)
+	if err!=nil{t.Fatal(err)}
+	defer second.Close()
+	b2,err:=second.SavedSessionReport()
+	if err!=nil||!bytes.Equal(b2,b){t.Fatalf("restart lost saved report: %v",err)}
+}
+func TestMissingSavedSessionShows404(t *testing.T){
+	a:=demoApp(t)
+	frames:=&Frames{}
+	frames.PNG.Store([]byte{1})
+	w:=httptest.NewRecorder()
+	a.Handler(frames).ServeHTTP(w,httptest.NewRequest("GET","http://localhost/api/report/saved",nil))
+	if w.Code!=404{t.Fatalf("saved report should not silently substitute live snapshot: %d",w.Code)}
+}
+func TestFreshProbesAreNeverHardwareActionsInDemo(t *testing.T){
+	a:=demoApp(t)
+	for _,name:=range []string{"probe-basic-fresh","probe-accessory"}{
+		if err:=a.Action(Action{Name:name});err==nil{t.Errorf("demo allowed %s",name)}
+	}
+}
+func TestConnectionViewOffersSeparateProbePaths(t *testing.T){
+	a:=demoApp(t)
+	action(t,a,"diagnostics",0,"")
+	rows:=a.View().Rows
+	got:=map[string]bool{}
+	for _,row:=range rows{got[row.Action.Name]=true}
+	if !got["probe-basic-fresh"]||!got["probe-accessory"]||!got["connect"]{
+		t.Fatalf("missing probe choices: %+v",rows)
+	}
+}
