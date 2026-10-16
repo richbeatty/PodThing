@@ -207,6 +207,9 @@ func (a *App) connect() error {
 		if err := a.load(); err != nil {
 			return fmt.Errorf("iAP database retry: %w", err)
 		}
+		a.mu.Lock()
+		a.s.Status = "iPod connected; music library ready"
+		a.mu.Unlock()
 		return nil
 	}
 	a.Scan()
@@ -255,6 +258,9 @@ func (a *App) connect() error {
 		a.mu.Unlock()
 		return fmt.Errorf("iAP database browsing: %w", err)
 	}
+	a.mu.Lock()
+	a.s.Status = "iPod connected; music library ready"
+	a.mu.Unlock()
 	return nil
 }
 func (a *App) load() error {
