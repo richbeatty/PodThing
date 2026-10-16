@@ -22,6 +22,15 @@ jobs:
         with:
           go-version: '1.27.2'
           cache: true
+      - name: Set firmware revision
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            revision="${GITHUB_REF_NAME#podthing-v}"
+          else
+            revision="0.1.0-test.${GITHUB_RUN_NUMBER}"
+          fi
+          printf 'PODTHING_VERSION=%s\n' "$revision" >> "$GITHUB_ENV"
       - name: Application checks and binaries
         shell: bash
         run: |
@@ -45,9 +54,6 @@ jobs:
           tar --exclude=__pycache__ --exclude='*.pyc' -czf dist/podthing-0.1.0-source.tar.gz \
             README.md THIRD_PARTY.md .gitignore go.mod go.sum .github cmd internal scripts firmware docs
           cp docs/RELEASE-0.1.0.md build/direct/release-notes.md
-          printf '\nInstaller SHA-256:\n\n```text\n' >> build/direct/release-notes.md
-          cat dist/podthing-0.1.0-flashthing.zip.sha256 >> build/direct/release-notes.md
-          printf '```\n' >> build/direct/release-notes.md
       - name: Publish prerelease with downloadable assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,12 +68,18 @@ jobs:
             tag="podthing-v0.1.0-test.${GITHUB_RUN_NUMBER}"
             target=(--target "$GITHUB_SHA")
           fi
+          installer="podthing-${tag#podthing-v}-flashthing.zip"
+          cp dist/podthing-0.1.0-flashthing.zip "dist/$installer"
+          (cd dist && sha256sum "$installer" > "$installer.sha256")
+          printf '\nInstaller SHA-256:\n\n```text\n' >> build/direct/release-notes.md
+          cat "dist/$installer.sha256" >> build/direct/release-notes.md
+          printf '```\n' >> build/direct/release-notes.md
           gh release create "$tag" \
-            dist/podthing-0.1.0-flashthing.zip \
-            dist/podthing-0.1.0-flashthing.zip.sha256 \
+            "dist/$installer" \
+            "dist/$installer.sha256" \
             dist/podthing-0.1.0-source.tar.gz \
             "${target[@]}" --prerelease \
-            --title 'PodThing 0.1.0 - hardware-test prerelease' \
+            --title "PodThing ${tag#podthing-v} - hardware-test prerelease" \
             --notes-file build/direct/release-notes.md
       - name: Keep failure diagnostics
         if: failure()
