@@ -62,6 +62,21 @@ func BuildView(s Snapshot) View {
 			{"Save diagnostic report","Stored on device",Action{Name:"export"}},
 			{"Disconnect iPod","Release accessory mode",Action{Name:"disconnect"}},
 		}
+		if s.AuthRequired {
+			probe:=[]Row{
+				{"Authentication requested",s.AuthDetail,Action{Name:"settings-page",Text:"settings-usb"}},
+				{"Blocked at",s.AuthStage,Action{Name:"settings-page",Text:"settings-usb"}},
+			}
+			if !s.BasicRemote {
+				probe=append(probe,Row{"Try Simple Remote","No MFi; basic controls only",Action{Name:"probe-basic"}})
+			} else {
+				probe=append(probe,
+					Row{"Test Play / Pause","No ACK; watch iPod",Action{Name:"play"}},
+					Row{"Test Next Track","No ACK; watch iPod",Action{Name:"next"}},
+					Row{"Test Previous Track","No ACK; watch iPod",Action{Name:"previous"}})
+			}
+			v.Rows=append(probe,v.Rows...)
+		}
 		if s.Error!="" {v.Rows=append(v.Rows,Row{"Last error",s.Error,Action{Name:"rescan"}})}
 		for _,d:=range s.USB {if d.IPod {v.Rows=append(v.Rows,Row{"Detected iPod",d.Product+fmt.Sprintf(" / cfg %d",d.Active),Action{Name:"rescan"}})}}
 		v.Rows=append(v.Rows,Row{"Back","",Action{Name:"back"}})
@@ -104,6 +119,7 @@ func BuildView(s Snapshot) View {
 	if s.Screen!="library" {v.Hits=append(v.Hits,Hit{12,10,52,49,Action{Name:"back"}})}
 	if s.Screen=="library"&&!s.Connected {
 		action:="connect";if s.HostRole=="device" {action="usb-host"}
+		if s.AuthRequired && !s.BasicRemote {action="diagnostics"}
 		v.Hits=append(v.Hits,Hit{240,267,320,55,Action{Name:action}})
 	}
 	if s.Screen!="playing" {
@@ -253,6 +269,8 @@ func (p *Painter) Render(v View) *image.RGBA {
 	p.text(img,titleX,70,13,false,muted,v.Caption,573)
 	status:="NOT CONNECTED"
 	if st.Connected {status="IPOD CONNECTED"}
+	if st.AuthRequired {status="AUTH REQUIRED"}
+	if st.BasicRemote {status="BASIC REMOTE TEST"}
 	if st.Demo {status="UI PREVIEW"}
 	if st.Busy {status="CONNECTING"}
 	statusColor:=muted
@@ -276,13 +294,21 @@ func (p *Painter) Render(v View) *image.RGBA {
 		round(img,24,146,752,251,21,panel)
 		round(img,76,183,88,88,24,tintMix(ac,80))
 		p.glyph(img,104,210,"music",textColor)
-		p.text(img,194,209,27,true,textColor,"Your music, ready to go.",550)
-		p.text(img,194,244,16,false,muted,"Connect your iPod to browse and play.",550)
+		head,sub:="Your music, ready to go.","Connect your iPod to browse and play."
+		if st.AuthRequired {
+			head="Accessory authentication required"
+			sub="Open Connection settings for a basic control test."
+		}
+		p.text(img,194,209,27,true,textColor,head,550)
+		p.text(img,194,244,16,false,muted,sub,550)
 		round(img,240,267,320,55,17,ac)
 		label:="Connect iPod"
 		if st.HostRole=="device" {label="Enable USB host"}
+		if st.AuthRequired {label="Connection diagnostics"}
 		p.text(img,327,302,20,true,bg,label,215)
-		p.text(img,244,366,15,false,muted,"Use Settings for USB and audio options",490)
+		footer:="Use Settings for USB and audio options"
+		if st.BasicRemote { footer="Basic remote commands have no acknowledgment" }
+		p.text(img,244,366,15,false,muted,footer,490)
 	} else {
 		y,step,count:=101,50,6
 		if st.Screen=="library" {y,step,count=134,52,5}
