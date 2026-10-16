@@ -36,6 +36,8 @@ type Client struct {
 	wire       Transport
 	log        func(string)
 	sampleRate uint32
+	simpleHold time.Duration
+	identifyLingo byte
 }
 type Entry struct {
 	Index uint32 `json:"index"`
@@ -61,7 +63,7 @@ func New(w Transport, log func(string)) *Client {
 	if log == nil {
 		log = func(string) {}
 	}
-	return &Client{wire: w, log: log, sampleRate: 44100}
+	return &Client{wire: w, log: log, sampleRate: 44100, simpleHold: 150*time.Millisecond, identifyLingo: 4}
 }
 func (c *Client) send(p Packet) error {
 	c.log(fmt.Sprintf("TX lingo=%02x command=%04x bytes=%d", p.Lingo, p.Command, len(p.Data)))
@@ -80,8 +82,13 @@ func (c *Client) receive(ctx context.Context) (Packet, error) {
 		c.log(fmt.Sprintf("RX lingo=%02x command=%04x bytes=%d", p.Lingo, p.Command, len(p.Data)))
 		if p.Lingo == 0 && p.Command == 0 {
 			c.log("iPod requested accessory identification")
-			// Respond at most once per Receive call; caller can continue session.
-			if e = c.send(Packet{Lingo: 0, Command: 1, Data: []byte{4}}); e != nil {
+			// An IdentifyDeviceLingoes probe must not silently switch
+			// the iPod into legacy Extended Interface mode.
+			if c.identifyLingo == 0 {
+				c.log("iAP 00/0000 RequestIdentify observed during modern probe")
+				return p, nil
+			}
+			if e = c.send(Packet{Lingo: 0, Command: 1, Data: []byte{c.identifyLingo}}); e != nil {
 				return Packet{}, e
 			}
 			continue
@@ -208,6 +215,7 @@ func (c *Client) Abort() error { return c.wire.Close() }
 // Legacy Identify with lingo 2 resets Extended Interface negotiation; it
 // advertises only the simple remote control capability. No ACK is expected.
 func (c *Client) BeginSimpleRemote() error {
+	c.identifyLingo = 2
 	c.log("STAGE iAP1: trying legacy Simple Remote, no MFi capabilities")
 	if err := c.send(Packet{Lingo: 0, Command: 1, Data: []byte{2}}); err != nil {
 		return fmt.Errorf("iAP Simple Remote Identify: %w", err)
@@ -234,11 +242,37 @@ func (c *Client) SimpleRemoteKey(key string) error {
 	if err := c.send(Packet{Lingo: 2, Command: 0, Data: []byte{mask}}); err != nil {
 		return fmt.Errorf("Simple Remote %s press: %w", key, err)
 	}
-	// Release even when subsequent operations fail, to avoid held buttons.
+	// V5 released immediately. Give the iPod time to sample the key.
+	if c.simpleHold > 0 { time.Sleep(c.simpleHold) }
 	if err := c.send(Packet{Lingo: 2, Command: 0, Data: []byte{0}}); err != nil {
 		return fmt.Errorf("Simple Remote %s release: %w", key, err)
 	}
 	return nil
+}
+
+// ProbeAccessory follows the modern IdentifyDeviceLingoes method described
+// by the pi-iap-bt-bridge test stereo, but without pretending to possess
+// credentials: General, Simple, Display and Extended, no Digital Audio,
+// no authentication flags, and no device ID.
+func (c *Client) ProbeAccessory() (string, error) {
+	c.identifyLingo = 0
+	c.log("STAGE iAP1: modern IdentifyDeviceLingoes, no MFi credentials")
+	data := append(U32(0x1d), U32(0)...)
+	data = append(data, U32(0)...)
+	if _, err := c.request(Packet{Lingo: 0, Command: 0x13, Data: data}, 0); err != nil {
+		return "", fmt.Errorf("modern IdentifyDeviceLingoes: %w", err)
+	}
+	c.log("STAGE iAP1: modern identification accepted; querying name")
+	name, err := c.request(Packet{Lingo: 0, Command: 7}, 8)
+	if err != nil { return "", fmt.Errorf("modern accessory name: %w", err) }
+	result := text(name.Data)
+	if result == "" { result = "iPod (unnamed)" }
+	c.log("STAGE iAP1: querying remote state without entering remote mode")
+	mode, err := c.request(Packet{Lingo: 0, Command: 3}, 4)
+	if err != nil { return result, fmt.Errorf("modern accessory remote state: %w", err) }
+	if len(mode.Data) == 0 { return result, errors.New("remote mode response lacked state") }
+	c.log(fmt.Sprintf("Modern accessory responded; Extended UI active=%t", mode.Data[0] != 0))
+	return result, nil
 }
 
 // RequestDigitalAudio advertises USB digital-audio support explicitly. A real
