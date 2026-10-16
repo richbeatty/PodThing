@@ -316,11 +316,11 @@ func OpenIPod(d Device, log func(string)) (*USB, error) {
 		}
 		u.changed = true
 		log(fmt.Sprintf("Selected USB configuration %d (was %d)", v, d.Active))
-		// usbfs may briefly expose a stale configuration after switching.
-		// Do not issue another configuration switch or USB reset in a loop.
-		// Report the state so we can distinguish enumeration from iAP errors.
-		if state := read(d.SysPath + "/bConfigurationValue"); state != "" {
-			log("USB configuration reported by kernel: " + state)
+		// A configuration switch can change the iPod's USB device address.
+		// Wait for the kernel's actual state and reopen usbfs if necessary.
+		// Never reset the port or repeat SET_CONFIGURATION automatically.
+		if e = u.waitConfiguration(int(v)); e != nil {
+			return nil, e
 		}
 	}
 	log(fmt.Sprintf("STAGE USB: claiming HID interface %d", in.Number))
@@ -364,6 +364,40 @@ func OpenIPod(d Device, log func(string)) (*USB, error) {
 	ok = true
 	return u, nil
 }
+// waitConfiguration distinguishes a successful accessory switch from a
+// storage-mode bounce and follows any kernel USB address change. It does not
+// reconfigure, reset or touch the iPod's storage.
+func (u *USB) waitConfiguration(target int) error {
+	deadline := time.Now().Add(2500 * time.Millisecond)
+	last := ""
+	for time.Now().Before(deadline) {
+		current := read(u.device.SysPath + "/bConfigurationValue")
+		if current != "" { last = current }
+		if current == strconv.Itoa(target) {
+			bus := number(u.device.SysPath + "/busnum")
+			addr := number(u.device.SysPath + "/devnum")
+			if bus < 1 || addr < 1 {
+				return errors.New("USB: invalid kernel device address after accessory switch")
+			}
+			if bus != u.device.Bus || addr != u.device.Address {
+				path := fmt.Sprintf("/dev/bus/usb/%03d/%03d", bus, addr)
+				reopened, err := os.OpenFile(path, os.O_RDWR, 0)
+				if err != nil {
+					return fmt.Errorf("USB: accessory re-enumerated at %s, reopen failed: %w", path, err)
+				}
+				_ = u.file.Close()
+				u.file = reopened
+				u.device.Bus, u.device.Address = bus, addr
+				u.log("USB: accessory re-enumerated; reopened updated device address")
+			}
+			u.log("USB: accessory configuration confirmed by kernel")
+			return nil
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	return fmt.Errorf("USB: accessory configuration %d not active after 2.5s (kernel reports %q); connection stopped without another reset", target, last)
+}
+
 func (u *USB) control(kind, request byte, value, index uint16, b []byte) (int, error) {
 	var data uintptr
 	if len(b) > 0 {
@@ -409,7 +443,9 @@ func (u *USB) Receive(ctx context.Context) ([]byte, error) {
 	}
 }
 func (u *USB) interrupt(ctx context.Context) ([]byte, error) {
-	b := make([]byte, max(1024, int(u.endpoint.MaxPacket)))
+	// An interrupt URB is for exactly one endpoint packet, not an
+	// arbitrary 1 KiB transfer. Some host controllers reject oversize URBs.
+	b := make([]byte, int(u.endpoint.MaxPacket))
 	q := &urb{Type: 1, Endpoint: u.endpoint.Address, Buffer: uintptr(unsafe.Pointer(&b[0])), BufferLength: int32(len(b))}
 	// usbfs retains both pointers until REAPURB. Pin across the asynchronous ioctl.
 	var pin runtime.Pinner
