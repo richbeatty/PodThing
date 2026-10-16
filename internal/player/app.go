@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,6 +47,7 @@ type Snapshot struct {
 	Now         iap.NowPlaying    `json:"now"`
 	Accent      [3]uint8         `json:"accent"`
 	HasArtwork  bool             `json:"has_artwork"`
+	Artwork     image.Image      `json:"-"`
 	Settings    Settings          `json:"settings"`
 	USB         []hardware.Device `json:"usb"`
 	Audio       []hardware.PCM    `json:"audio"`
@@ -369,6 +371,13 @@ func (a *App) refresh() error {
 		return e
 	}
 	a.mu.Lock()
+	// Artwork always belongs to the displayed track. Never carry the last
+	// album's colors or cover into the next track when they change.
+	if a.s.Now.Title != n.Title || a.s.Now.Album != n.Album || a.s.Now.Artist != n.Artist {
+		a.s.Accent = [3]uint8{96, 154, 255}
+		a.s.Artwork = nil
+		a.s.HasArtwork = false
+	}
 	a.s.Now = n
 	a.mu.Unlock()
 	return nil
