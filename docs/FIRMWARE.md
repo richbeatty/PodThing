@@ -33,8 +33,9 @@ This recovery procedure has not been exercised on a physical device here.
 Use Car Thing → powered USB-C OTG hub → ordinary USB-to-30-pin data cable →
 iPod classic, and connect the hub's 3.5 mm output to AUX.
 
-The firmware boots with its USB port in **device/recovery mode**. With the hub
-powered, press **Enable USB host**, attach the iPod and choose **Connect iPod**.
+The firmware now boots with its USB port in **host mode**. Attach a powered
+OTG hub and the iPod, then choose **Connect iPod**. Use Settings > Connection
+> Computer recovery to switch temporarily to USB device/network mode.
 It will not mount or rewrite the iPod's music filesystem.
 
 - The four presets open Artists, Albums, Songs and Playlists. Turn the wheel to
