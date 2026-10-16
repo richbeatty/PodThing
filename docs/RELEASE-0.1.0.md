@@ -5,6 +5,11 @@ Download the revision-specific installer ending in `-flashthing.zip` and its mat
 The source archive contains the application, firmware configuration, build
 scripts and instructions.
 
+This hardware-test revision adds a modern native interface, nested settings,
+automatic host mode and black boot splash. Art-based color extraction is built,
+but retrieving artwork from a stock iPod remains unimplemented until the iPod
+control protocol is confirmed working on physical hardware.
+
 This build passes ARM64 Cortex-A53 boot under emulation, systemd startup,
 native Wayland/Weston rendering, browsing, recovery-log download, ALSA null-device
 tests, and GPT/filesystem/ZIP checks.
