@@ -162,19 +162,24 @@ func (p *Painter) face(size int, bold bool) font.Face {
 func fill(img *image.RGBA, x, y, w, h int, c color.RGBA) {
 	draw.Draw(img, image.Rect(x, y, x+w, y+h), &image.Uniform{C: c}, image.Point{}, draw.Src)
 }
-func round(img *image.RGBA, x, y, w, h, r int, c color.RGBA) {
-	fill(img, x+r, y, w-2*r, h, c)
-	fill(img, x, y+r, w, h-2*r, c)
-	for yy := 0; yy < r; yy++ {
-		for xx := 0; xx < r; xx++ {
-			if (xx-r)*(xx-r)+(yy-r)*(yy-r) <= r*r {
-				img.SetRGBA(x+xx, y+yy, c)
-				img.SetRGBA(x+w-1-xx, y+yy, c)
-				img.SetRGBA(x+xx, y+h-1-yy, c)
-				img.SetRGBA(x+w-1-xx, y+h-1-yy, c)
-			}
-		}
-	}
+func round(img *image.RGBA,x,y,w,h,r int,c color.RGBA) {
+	if w<=0||h<=0 {return}
+	r=min(r,min(w,h)/2)
+	if r<=0 {fill(img,x,y,w,h,c);return}
+	vr:=vector.NewRasterizer(w,h)
+	fw,fh,fr:=float32(w),float32(h),float32(r)
+	k:=fr*0.55228475
+	vr.MoveTo(fr,0)
+	vr.LineTo(fw-fr,0)
+	vr.CubeTo(fw-fr+k,0,fw,fr-k,fw,fr)
+	vr.LineTo(fw,fh-fr)
+	vr.CubeTo(fw,fh-fr+k,fw-fr+k,fh,fw-fr,fh)
+	vr.LineTo(fr,fh)
+	vr.CubeTo(fr-k,fh,0,fh-fr+k,0,fh-fr)
+	vr.LineTo(0,fr)
+	vr.CubeTo(0,fr-k,fr-k,0,fr,0)
+	vr.ClosePath()
+	vr.Draw(img,image.Rect(x,y,x+w,y+h),&image.Uniform{C:c},image.Point{})
 }
 func (p *Painter) text(img *image.RGBA, x, y, size int, bold bool, c color.RGBA, s string, maxWidth int) {
 	f := p.face(size, bold)
@@ -193,142 +198,126 @@ func (p *Painter) text(img *image.RGBA, x, y, size int, bold bool, c color.RGBA,
 	d := font.Drawer{Dst: img, Src: &image.Uniform{C: c}, Face: f, Dot: fixed.P(x, y)}
 	d.DrawString(s)
 }
+
+func themeAccent(s Snapshot) color.RGBA {
+	if s.Accent==[3]uint8{} {return accent}
+	return color.RGBA{s.Accent[0],s.Accent[1],s.Accent[2],255}
+}
+func tintMix(c color.RGBA,n int) color.RGBA {
+	n=max(0,min(255,n))
+	return color.RGBA{
+		uint8((int(c.R)*n+28*(255-n))/255),
+		uint8((int(c.G)*n+35*(255-n))/255),
+		uint8((int(c.B)*n+45*(255-n))/255),255}
+}
+func (p *Painter) glyph(img *image.RGBA,x,y int,name string,c color.RGBA) {
+	r:=vector.NewRasterizer(32,32)
+	poly:=func(points ...float32) {
+		if len(points)<6 {return}
+		r.MoveTo(points[0],points[1])
+		for i:=2;i<len(points);i+=2 {r.LineTo(points[i],points[i+1])}
+		r.ClosePath()
+	}
+	switch name {
+	case "play": poly(10,5,27,16,10,27)
+	case "pause": poly(9,6,14,6,14,26,9,26);poly(19,6,24,6,24,26,19,26)
+	case "next": poly(5,6,19,16,5,26);poly(20,6,25,6,25,26,20,26)
+	case "previous": poly(27,6,13,16,27,26);poly(7,6,12,6,12,26,7,26)
+	case "back": poly(19,5,22,9,13,16,22,23,19,27,7,16)
+	case "gear": poly(14,4,18,4,19,9,23,11,27,9,29,14,25,17,25,21,21,22,19,28,13,28,11,23,7,21,4,23,3,17,7,14,8,10,12,9)
+	case "music": poly(17,6,26,4,26,22,23,22,23,10,20,11,20,24,17,24);poly(9,19,16,17,18,20,16,25,9,27,6,23)
+	case "chevron": poly(13,8,17,8,24,16,17,24,13,24,20,16)
+	}
+	r.Draw(img,image.Rect(x,y,x+32,y+32),&image.Uniform{C:c},image.Point{})
+}
 func (p *Painter) Render(v View) *image.RGBA {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	s := v.State
-	img := image.NewRGBA(image.Rect(0, 0, 800, 480))
-	fill(img, 0, 0, 800, 480, bg)
-	round(img, 16, 17, 10, 25, 5, accent)
-	p.text(img, 36, 40, 27, true, textColor, "PodThing", 210)
-	status := "DISCONNECTED"
-	c := muted
-	if s.Connected {
-		status = "IPOD CONNECTED"
-		c = green
+	st:=v.State
+	img:=image.NewRGBA(image.Rect(0,0,800,480))
+	ac:=themeAccent(st)
+	fill(img,0,0,800,480,bg)
+	for y:=0;y<415;y+=5 {
+		factor:=max(0,24-y/23)
+		if y<65 {factor+=8}
+		fill(img,0,y,800,5,tintMix(ac,factor))
 	}
-	if s.Demo {
-		status = "DEMO · NO AUDIO"
-		c = accent
+	if st.Screen!="library" {
+		round(img,16,10,44,45,13,panel)
+		p.glyph(img,22,16,"back",textColor)
 	}
-	if s.Busy {
-		status = "WORKING…"
-		c = accent
-	}
-	p.text(img, 261, 36, 13, true, c, status, 300)
-	round(img, 690, 12, 94, 36, 10, panel)
-	p.text(img, 710, 36, 17, false, textColor, "Settings", 78)
-	for i, cat := range Categories {
-		x := 16 + i*194
-		active := s.Screen == "library" && s.Category == cat
-		col := panel
-		fg := muted
-		if active {
-			col = color.RGBA{57, 40, 26, 255}
-			fg = accent
+	titleX:=25
+	if st.Screen!="library" {titleX=78}
+	p.text(img,titleX,44,29,true,textColor,v.Title,502)
+	p.text(img,titleX,70,13,false,muted,v.Caption,573)
+	status:="NOT CONNECTED"
+	if st.Connected {status="IPOD CONNECTED"}
+	if st.Busy {status="CONNECTING"}
+	statusColor:=muted
+	if st.Connected {statusColor=green}
+	if st.Busy {statusColor=ac}
+	round(img,619,13,167,36,18,panel)
+	p.text(img,632,37,13,true,statusColor,status,151)
+	if st.Screen=="library" {
+		for i,category:=range Categories {
+			x:=16+i*194
+			selected:=category==st.Category
+			col,fg:=panel,muted
+			if selected {col,fg=tintMix(ac,70),textColor}
+			round(img,x,83,186,43,13,col)
+			p.text(img,x+16,111,17,selected,fg,category,157)
 		}
-		round(img, x, 62, 186, 40, 10, col)
-		p.text(img, x+18, 89, 19, active, fg, cat, 150)
 	}
-	titleX := 20
-	if len(s.Path) > 0 && s.Screen == "library" {
-		p.text(img, 22, 139, 26, false, accent, "‹", 30)
-		titleX = 56
-	}
-	p.text(img, titleX, 138, 22, true, textColor, v.Title, 310)
-	p.text(img, 348, 137, 14, false, muted, v.Caption, 430)
-	if s.Screen == "playing" {
-		p.playing(img, s)
-		for i, row := range v.Rows {
-			y := 148 + i*44
-			col := panel
-			if i == s.Focus {
-				col = color.RGBA{57, 40, 26, 255}
-			}
-			round(img, 475, y, 309, 40, 9, col)
-			p.text(img, 489, y+26, 17, false, textColor, row.Title, 190)
-			p.text(img, 698, y+26, 14, false, accent, row.Detail, 74)
-		}
-	} else if s.Screen == "library" && !s.Connected {
-		p.ipod(img, 176, 181, 0.65)
-		p.text(img, 283, 211, 28, true, textColor, "Your library. Your iPod.", 470)
-		p.text(img, 283, 243, 17, false, muted, "Attach a powered hub and iPod data cable.", 470)
-		round(img, 283, 283, 234, 48, 12, accent)
-		button := "Connect iPod"
-		if s.HostRole == "device" {
-			button = "Enable USB host"
-		}
-		p.text(img, 307, 314, 20, true, bg, button, 205)
-		p.text(img, 307, 361, 16, false, muted, "USB & audio diagnostics", 300)
-	} else if len(v.Rows) == 0 {
-		p.text(img, 30, 220, 24, false, muted, "No items returned", 700)
+	if st.Screen=="playing" {
+		p.playing(img,st)
+	} else if st.Screen=="library"&&!st.Connected {
+		round(img,24,146,752,251,21,panel)
+		round(img,76,183,88,88,24,tintMix(ac,80))
+		p.glyph(img,104,210,"music",textColor)
+		p.text(img,194,209,27,true,textColor,"Your music, ready to go.",550)
+		p.text(img,194,244,16,false,muted,"Connect your iPod to browse and play.",550)
+		round(img,240,267,320,55,17,ac)
+		label:="Connect iPod"
+		if st.HostRole=="device" {label="Enable USB host"}
+		p.text(img,327,302,20,true,bg,label,215)
+		p.text(img,244,366,15,false,muted,"Use Settings for USB and audio options",490)
 	} else {
-		for i := v.Start; i < min(len(v.Rows), v.Start+5); i++ {
-			row := v.Rows[i]
-			y := 154 + (i-v.Start)*44
-			col := panel
-			fg := textColor
-			if i == s.Focus {
-				col = color.RGBA{50, 39, 29, 255}
-				fg = accent
-			}
-			round(img, 16, y, 768, 41, 9, col)
-			if i == s.Focus {
-				round(img, 16, y+8, 4, 25, 2, accent)
-			}
-			p.text(img, 34, y+27, 20, i == s.Focus, fg, row.Title, 490)
-			p.text(img, 536, y+26, 14, false, muted, row.Detail, 206)
-			p.text(img, 758, y+27, 23, false, muted, "›", 18)
-		}
-		if len(v.Rows) > 5 {
-			h := max(10, 220*5/len(v.Rows))
-			y := 154 + (220-h)*v.Start/max(1, len(v.Rows)-5)
-			round(img, 791, y, 3, h, 1, muted)
+		y,step,count:=101,50,6
+		if st.Screen=="library" {y,step,count=134,52,5}
+		if len(v.Rows)==0 {p.text(img,36,213,22,false,muted,"Nothing to show yet",690)}
+		for i:=v.Start;i<min(len(v.Rows),v.Start+count);i++ {
+			item:=v.Rows[i]
+			yy:=y+(i-v.Start)*step
+			col:=panel
+			if i==st.Focus {col=tintMix(ac,46)}
+			round(img,18,yy,762,step-3,14,col)
+			if i==st.Focus {round(img,20,yy+9,3,step-21,2,ac)}
+			p.text(img,36,yy+31,18,i==st.Focus,textColor,item.Title,499)
+			p.text(img,550,yy+30,13,false,muted,item.Detail,178)
+			p.glyph(img,743,yy+8,"chevron",muted)
 		}
 	}
-	message := s.Status
-	mc := muted
-	if s.Error != "" {
-		message = s.Error
-		mc = color.RGBA{255, 137, 123, 255}
-	}
-	if s.Screen == "library" && s.Total > 0 && s.Error == "" {
-		message = fmt.Sprintf("%d–%d of %d  ·  Turn to browse · Press to select", s.Offset+1, s.Offset+uint32(len(s.Entries)), s.Total)
-	}
-	p.text(img, 20, 394, 13, false, mc, message, 760)
-	fill(img, 0, 404, 800, 76, panel)
-	round(img, 16, 417, 48, 48, 10, color.RGBA{57, 40, 26, 255})
-	p.text(img, 29, 450, 29, false, accent, "♪", 35)
-	title := s.Now.Title
-	if title == "" {
-		title = "Nothing playing"
-	}
-	p.text(img, 80, 437, 18, true, textColor, title, 456)
-	subtitle := s.Now.Artist
-	if s.Now.Album != "" {
-		subtitle += " · " + s.Now.Album
-	}
-	if subtitle == "" {
-		subtitle = "Playback stays on your iPod"
-	}
-	p.text(img, 80, 460, 14, false, muted, subtitle, 455)
-	for _, r := range []struct{ x, w int }{{556, 64}, {628, 76}, {712, 64}} {
-		round(img, r.x, 417, r.w, 48, 12, line)
-	}
-	round(img, 628, 411, 76, 60, 14, accent)
-	p.text(img, 574, 449, 25, true, textColor, "‹‹", 50)
-	if s.Now.Playing {
-		fill(img, 655, 429, 7, 24, bg)
-		fill(img, 669, 429, 7, 24, bg)
-	} else {
-		for y := -14; y <= 14; y++ {
-			width := 23 * (14 - absInt(y)) / 14
-			fill(img, 657, 441+y, width, 1, bg)
-		}
-	}
-	p.text(img, 729, 449, 25, true, textColor, "››", 50)
+	message:=st.Status
+	messageColor:=muted
+	if st.Error!="" {message=st.Error;messageColor=color.RGBA{255,148,149,255}}
+	if st.Screen!="playing"&&message!="" {p.text(img,22,410,12,false,messageColor,message,752)}
+	fill(img,0,418,800,62,panel)
+	fill(img,0,418,800,1,line)
+	round(img,16,424,44,43,13,tintMix(ac,58))
+	p.glyph(img,22,429,"gear",textColor)
+	track:=st.Now.Title
+	if track=="" {track="Nothing playing"}
+	p.text(img,80,442,18,true,textColor,track,470)
+	artist:=st.Now.Artist
+	if artist=="" {artist="Your iPod music"}
+	p.text(img,80,464,13,false,muted,artist,470)
+	p.glyph(img,582,431,"previous",textColor)
+	round(img,641,421,65,51,16,ac)
+	if st.Now.Playing {p.glyph(img,659,430,"pause",bg)} else {p.glyph(img,659,430,"play",bg)}
+	p.glyph(img,729,431,"next",textColor)
 	return img
 }
+
 func (p *Painter) ipod(img *image.RGBA, x, y int, scale float64) {
 	w, h := int(105*scale), int(157*scale)
 	round(img, x, y, w, h, 12, color.RGBA{182, 189, 197, 255})
@@ -350,24 +339,24 @@ func (p *Painter) ipod(img *image.RGBA, x, y int, scale float64) {
 		}
 	}
 }
-func (p *Painter) playing(img *image.RGBA, s Snapshot) {
-	p.ipod(img, 34, 165, 0.98)
-	title := s.Now.Title
-	if title == "" {
-		title = "Nothing playing"
+func (p *Painter) playing(img *image.RGBA,s Snapshot) {
+	ac:=themeAccent(s)
+	round(img,35,115,230,230,22,tintMix(ac,78))
+	round(img,58,138,184,184,18,tintMix(ac,35))
+	p.glyph(img,134,205,"music",textColor)
+	track:=s.Now.Title
+	if track=="" {track="Nothing playing"}
+	p.text(img,315,161,30,true,textColor,track,450)
+	p.text(img,315,201,21,false,muted,s.Now.Artist,450)
+	p.text(img,315,237,17,false,muted,s.Now.Album,450)
+	round(img,315,285,439,6,3,line)
+	if s.Now.Duration>0 {
+		portion:=uint64(min(s.Now.Position,s.Now.Duration))*439/uint64(s.Now.Duration)
+		if portion>0 {round(img,315,285,int(portion),6,3,ac)}
 	}
-	p.text(img, 166, 194, 25, true, textColor, title, 292)
-	p.text(img, 166, 226, 18, false, muted, s.Now.Artist, 290)
-	p.text(img, 166, 252, 16, false, muted, s.Now.Album, 290)
-	round(img, 166, 283, 284, 4, 2, line)
-	if s.Now.Duration > 0 {
-		round(img, 166, 283, max(4, int(uint64(s.Now.Position)*284/uint64(s.Now.Duration))), 4, 2, accent)
-	}
-	p.text(img, 166, 312, 14, false, muted, clock(s.Now.Position), 100)
-	p.text(img, 407, 312, 14, false, muted, clock(s.Now.Duration), 60)
-	if s.Demo {
-		p.text(img, 34, 355, 14, true, accent, "DEMO · Playback is simulated", 410)
-	}
+	p.text(img,315,321,14,false,muted,clock(s.Now.Position),120)
+	p.text(img,698,321,14,false,muted,clock(s.Now.Duration),60)
+	p.text(img,315,374,15,false,muted,"Use the controls below for playback",450)
 }
 func clock(ms uint32) string { return fmt.Sprintf("%d:%02d", ms/60000, ms/1000%60) }
 func absInt(v int) int {
