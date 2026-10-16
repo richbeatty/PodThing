@@ -21,6 +21,7 @@ type Playback struct {
 	start time.Time
 	elapsed time.Duration
 	paused bool
+	ended bool
 	errorText string
 }
 func (p *Playback) Start(file string, track Track, output string, offsetMS uint32) error {
@@ -50,6 +51,7 @@ func (p *Playback) Start(file string, track Track, output string, offsetMS uint3
 	p.start=time.Now()
 	p.paused=false
 	p.errorText=""
+	p.ended=false
 	p.mu.Unlock()
 	go func() {
 		e:=cmd.Wait()
@@ -58,7 +60,7 @@ func (p *Playback) Start(file string, track Track, output string, offsetMS uint3
 		if p.cmd==cmd {
 			if !p.paused {p.elapsed+=time.Since(p.start)}
 			p.cmd=nil
-			if e!=nil {p.errorText=e.Error()}
+			if e!=nil {p.errorText=e.Error()} else {p.ended=true}
 		}
 		p.mu.Unlock()
 		done<-e
@@ -122,6 +124,15 @@ func (p *Playback) State() (Track,uint32,bool,string) {
 	ms:=uint64(p.seekMS)+uint64(duration/time.Millisecond)
 	if ms>uint64(^uint32(0)) {ms=uint64(^uint32(0))}
 	return p.track,uint32(ms),p.cmd!=nil&&!p.paused,p.errorText
+}
+// TakeCompletion reports natural end only once; deliberate Stop does not
+// advance the queue.
+func (p *Playback) TakeCompletion() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e:=p.ended
+	p.ended=false
+	return e
 }
 func (p *Playback) Active() bool {
 	p.mu.Lock();defer p.mu.Unlock();return p.cmd!=nil
