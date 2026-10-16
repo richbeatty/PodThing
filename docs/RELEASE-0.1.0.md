@@ -9,9 +9,9 @@ ALSA playback device. It has play/pause, previous/next, seek,
 shuffle and repeat controls, and a guarded **Eject iPod safely** action.
 The device's music files, play counts and iTunesDB are never modified.
 
-No extra accessories are shipped. The previous hardware report
-listed **only internal Superbird capture devices and no USB DAC
-playback output**. Without an existing usable output (or future
+No extra accessories are shipped. The previous report was captured **in USB recovery mode**,
+so it cannot establish whether your USB hub provides a DAC while
+connected in host mode. Without a real audio output (or future
 Bluetooth A2DP support), local music playback cannot reach the
 car speakers. Tests validate code, not the actual iPod's partition,
 filesystem and sound output. ArtworkDB is not yet decoded.
