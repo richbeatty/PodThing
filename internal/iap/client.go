@@ -60,6 +60,14 @@ func (c *Client) receive(ctx context.Context) (Packet, error) {
 			return Packet{}, e
 		}
 		c.log(fmt.Sprintf("RX lingo=%02x command=%04x bytes=%d", p.Lingo, p.Command, len(p.Data)))
+		if p.Lingo == 0 && p.Command == 0 {
+			c.log("iPod requested accessory identification")
+			// Respond at most once per Receive call; caller can continue session.
+			if e = c.send(Packet{Lingo: 0, Command: 1, Data: []byte{4}}); e != nil {
+				return Packet{}, e
+			}
+			continue
+		}
 		if p.Lingo == 0 && (p.Command == 0x14 || p.Command == 0x17) {
 			return Packet{}, ErrAuthentication
 		}
@@ -85,7 +93,12 @@ func (c *Client) request(p Packet, response uint16) (Packet, error) {
 	if e := c.send(p); e != nil {
 		return Packet{}, e
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Remote mode transitions can respond PENDING before their final ACK.
+	timeout := 4 * time.Second
+	if p.Lingo == 0 && (p.Command == 3 || p.Command == 5 || p.Command == 6) {
+		timeout = 8 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	for {
 		r, e := c.receive(ctx)
@@ -96,6 +109,7 @@ func (c *Client) request(p Packet, response uint16) (Packet, error) {
 		if ack {
 			status := r.Data[0]
 			if status == 6 {
+				c.log(fmt.Sprintf("iAP %02x/%04x ACK pending", p.Lingo, p.Command))
 				continue
 			}
 			if status == 7 {
@@ -115,21 +129,48 @@ func (c *Client) request(p Packet, response uint16) (Packet, error) {
 	}
 }
 func (c *Client) Handshake() (string, error) {
-	// Legacy Identify (lingo 0, command 1, mode 4) avoids advertising credentials
-	// or licensed digital-audio capabilities we do not possess.
-	// Legacy Identify announces the accessory but receives no ACK.
-	// Waiting for one caused a timeout before remote control mode started.
+	// Identify is send-only. Some iPods automatically enter Extended Interface
+	// when they see lingo 04; others require an explicit EnterRemoteUIMode.
+	c.log("STAGE iAP1: identifying accessory (Extended Interface)")
 	if e := c.send(Packet{Lingo: 0, Command: 1, Data: []byte{4}}); e != nil {
-		return "", fmt.Errorf("identify iPod: %w", e)
+		return "", fmt.Errorf("iAP identification transfer: %w", e)
 	}
-	if _, e := c.request(Packet{Lingo: 0, Command: 5}, 0); e != nil {
-		return "", e
+	c.log("STAGE iAP1: checking remote UI mode")
+	remote := false
+	mode, err := c.request(Packet{Lingo: 0, Command: 3}, 4)
+	if err == nil {
+		if len(mode.Data) < 1 {
+			return "", errors.New("iAP remote mode response contained no state byte")
+		}
+		remote = mode.Data[0] != 0
+		c.log(fmt.Sprintf("Remote UI mode reported: %t", remote))
+	} else if errors.Is(err, ErrAuthentication) {
+		return "", err
+	} else {
+		// Older firmware may not answer RequestRemoteUIMode. Do not mistake
+		// a missing reply for success; explicitly enter the mode below.
+		c.log("Remote UI query unavailable; trying explicit mode entry: " + err.Error())
 	}
-	p, e := c.request(Packet{Lingo: 0, Command: 7}, 8)
-	if e != nil {
-		return "", e
+	if !remote {
+		c.log("STAGE iAP1: entering remote UI mode")
+		if _, err = c.request(Packet{Lingo: 0, Command: 5}, 0); err != nil {
+			return "", fmt.Errorf("iAP enter remote UI mode: %w", err)
+		}
 	}
-	return text(p.Data), nil
+	// A name is useful but is not an authentication or mode requirement.
+	c.log("STAGE iAP1: reading iPod name")
+	name, err := c.request(Packet{Lingo: 0, Command: 7}, 8)
+	if err != nil {
+		if errors.Is(err, ErrAuthentication) {
+			return "", err
+		}
+		c.log("iPod name unavailable (remote mode succeeded): " + err.Error())
+		return "iPod", nil
+	}
+	if s := text(name.Data); s != "" {
+		return s, nil
+	}
+	return "iPod", nil
 }
 func (c *Client) Close() error {
 	_, _ = c.request(Packet{Lingo: 0, Command: 6}, 0)

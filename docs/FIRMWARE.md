@@ -150,3 +150,24 @@ Credits remain visible under Settings > About.
 USB boots in host mode for the iPod and powered hub. Switch to USB recovery
 mode from Settings > Connection to connect a computer for diagnostic access.
 Hardware recovery using preset buttons 1 + 4 remains available.
+
+## USB/iAP1 session revision
+
+USB connection stages are shown directly on the Car Thing's bottom status
+line and in the locally stored report. An iPod can enumerate as ordinary USB
+storage before PodThing attempts the separate HID accessory configuration.
+The updated code selects an advertised accessory configuration with interrupt
+HID and preferentially USB audio support; it does not invent configuration
+values, repeatedly reset the bus, or mount music storage.
+
+Once HID is open, the accessory sends legacy Identify and checks whether the
+iPod has *already* entered Extended Interface mode. Only if needed does it
+send EnterRemoteUIMode. The normal pending-ACK and final ACK sequence is
+handled without treating the pending response as success. A missing iPod-name
+response does not reset an otherwise valid remote session. Authentication is
+still not emulated. A successful USB connection alone does not guarantee
+digital audio support.
+
+If the status stops at USB enumeration, HID claim, remote UI mode, or database
+browsing, report that exact stage/error. The firmware revision is visible in
+Settings > About, which helps exclude a cached/older Terbium ZIP.

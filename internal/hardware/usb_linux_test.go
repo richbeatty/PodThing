@@ -34,3 +34,20 @@ func TestLinuxUSBIOCTLLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestAccessoryInterfacePrefersAudioAndHID(t *testing.T) {
+	d := Device{Active: 1, Configurations: []Configuration{
+		{Value: 1, Interfaces: []Interface{{Number: 0, Class: 8}}},
+		{Value: 2, Interfaces: []Interface{
+			{Number: 0, Class: 1},
+			{Number: 2, Class: 3, Endpoints: []Endpoint{{Address: 0x83, Attributes: 3, MaxPacket: 64}}},
+		}},
+	}}
+	cfg, iface := accessoryInterface(d)
+	if cfg == nil || cfg.Value != 2 || iface.Number != 2 {
+		t.Fatalf("incorrect accessory config: %+v %+v", cfg, iface)
+	}
+	d.Configurations = d.Configurations[:1]
+	cfg, _ = accessoryInterface(d)
+	if cfg != nil { t.Fatalf("accepted storage-only configuration: %+v", cfg) }
+}

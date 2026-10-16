@@ -112,6 +112,9 @@ func New(demo bool, stateDir string) (*App, error) {
 func (a *App) Log(s string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if strings.HasPrefix(s, "STAGE ") {
+		a.s.Status = strings.TrimPrefix(s, "STAGE ")
+	}
 	a.s.Log = append(a.s.Log, time.Now().Format("15:04:05")+" "+s)
 	if len(a.s.Log) > 120 {
 		a.s.Log = a.s.Log[len(a.s.Log)-120:]
@@ -208,7 +211,7 @@ func (a *App) connect() error {
 	a.s.Name = ""
 	a.s.Entries = nil
 	a.s.Total = 0
-	a.s.Status = "Looking for iPod USB accessory mode"
+	a.s.Status = "USB: enumerating iPod devices"
 	a.mu.Unlock()
 	var found []hardware.Device
 	for _, d := range s.USB {
@@ -221,7 +224,7 @@ func (a *App) connect() error {
 	}
 	w, e := hardware.OpenIPod(found[0], a.Log)
 	if e != nil {
-		return e
+		return fmt.Errorf("USB HID setup: %w", e)
 	}
 	c := iap.New(w, a.Log)
 	name, e := c.Handshake()
@@ -240,7 +243,14 @@ func (a *App) connect() error {
 	a.s.Category = "Artists"
 	a.s.Screen = "library"
 	a.mu.Unlock()
-	return a.load()
+	a.Log("STAGE iAP1: loading music database")
+	if err := a.load(); err != nil {
+		a.mu.Lock()
+		a.s.Status = "iPod control connected; database access failed"
+		a.mu.Unlock()
+		return fmt.Errorf("iAP database browsing: %w", err)
+	}
+	return nil
 }
 func (a *App) load() error {
 	s := a.Snapshot()
