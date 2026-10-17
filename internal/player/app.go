@@ -98,6 +98,7 @@ type App struct {
 	artUse sync.RWMutex
 	artFetch sync.Mutex
 	coverTried map[string]bool
+	coverOrder []string
 	audio     hardware.Audio
 	stateDir  string
 	demoTrack int
@@ -383,6 +384,7 @@ func (a *App) openStorage() error {
 	a.s.TrayOpen=false
 	a.s.Covers=make(map[string]image.Image)
 	a.coverTried=make(map[string]bool)
+	a.coverOrder=nil
 	a.mu.Unlock()
 	a.rebuildHomeAlbums()
 	cards:=a.Snapshot().HomeAlbums
@@ -412,6 +414,7 @@ func (a *App) ejectStorage() error {
 	a.s.HomeAlbums=nil
 	a.s.Covers=nil
 	a.coverTried=nil
+	a.coverOrder=nil
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
