@@ -63,6 +63,34 @@ func setBlockReadOnly(path string) error {
 	if errno!=0{return fmt.Errorf("BLKROSET %s: %w",path,errno)}
 	return nil
 }
+// RecoverUSB attaches to an already-mounted, read-only volume belonging to
+// this specific enumerated iPod. This is needed after an app restart: the
+// kernel may still have the mount even though PodThing lost *Volume.
+func RecoverUSB(sysPath string) (*Volume,*Library,error) {
+	parts,e:=diskForUSB(sysPath)
+	if e!=nil{return nil,nil,e}
+	raw,e:=os.ReadFile("/proc/self/mountinfo")
+	if e!=nil{return nil,nil,e}
+	for _,line:=range strings.Split(string(raw),"\n") {
+		fields:=strings.Fields(line)
+		if len(fields)<10||fields[4]!=mountPoint{continue}
+		sep:=-1
+		for i,v:=range fields{if v=="-" {sep=i;break}}
+		if sep<0||sep+2>=len(fields){return nil,nil,errors.New("invalid managed iPod mount metadata")}
+		fs,dev:=fields[sep+1],fields[sep+2]
+		if fs!="vfat"&&fs!="hfsplus"{return nil,nil,errors.New("managed mount has unexpected filesystem")}
+		if !strings.Contains(","+fields[5]+",",",ro,"){return nil,nil,errors.New("managed iPod mount is not read-only")}
+		for _,part:=range parts {
+			if dev!=filepath.Join("/dev",part){continue}
+			lib,e:=Read(mountPoint)
+			if e!=nil{return nil,nil,fmt.Errorf("read recovered iPod library: %w",e)}
+			return &Volume{Device:dev,Disk:filepath.Join("/dev",diskName(part)),Root:mountPoint,FSType:fs,mounted:true},lib,nil
+		}
+		return nil,nil,errors.New("managed mount does not belong to the connected iPod")
+	}
+	return nil,nil,os.ErrNotExist
+}
+
 // OpenUSB changes NO bytes on disk. Both the containing USB disk and its
 // partition become kernel-enforced read-only before any filesystem mount.
 // Never fsck, replay a journal, or fall back to a read-write mount.
@@ -71,7 +99,7 @@ func OpenUSB(sysPath string) (*Volume,*Library,error) {
 	if e!=nil{return nil,nil,e}
 	if len(parts)==0{return nil,nil,errors.New("no USB storage partitions under this iPod; reconnect it in disk mode")}
 	if e=os.MkdirAll(mountPoint,0700);e!=nil{return nil,nil,e}
-	if isMounted(mountPoint){return nil,nil,errors.New("iPod mount already active; eject before reconnecting")}
+	if isMounted(mountPoint){return RecoverUSB(sysPath)}
 	failures:=[]string{}
 	for _,name:=range parts {
 		part:=filepath.Join("/dev",name)
