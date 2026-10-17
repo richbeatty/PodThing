@@ -50,6 +50,7 @@ func (a *App) filteredStorageTracks(s Snapshot) []int {
 func (a *App) loadStorage(s Snapshot) error {
 	if a.library==nil{return errors.New("no read-only iPod library")}
 	rows:=[]iap.Entry{}
+	cards:=[]MusicCard{}
 	switch s.Category {
 	case "Artists","Albums":
 		names:=map[string]bool{}
@@ -61,23 +62,49 @@ func (a *App) loadStorage(s Snapshot) error {
 		}
 		var keys []string
 		for k:=range names{keys=append(keys,k)}
-		sort.Slice(keys,func(i,j int)bool{return strings.ToLower(keys[i])<strings.ToLower(keys[j])})
-		for i,k:=range keys{rows=append(rows,iap.Entry{Index:uint32(i),Name:k})}
+		sort.Slice(keys,func(i,j int)bool{return sortText(s.SortMode,keys[i],keys[j])})
+		if s.Category=="Albums" {
+			indices:=a.filteredStorageTracks(s)
+			cards=sortedCards(a.library,indices,s.SortMode)
+			for i,card:=range cards {rows=append(rows,iap.Entry{Index:uint32(i),Name:card.Name})}
+		}else{
+			for i,k:=range keys {rows=append(rows,iap.Entry{Index:uint32(i),Name:k})}
+		}
 	case "Songs":
-		for _,i:=range a.filteredStorageTracks(s) {
+		indices:=a.filteredStorageTracks(s)
+		// Preserve source playlist order by default, while allowing a
+		// user-selected alphabetical/artist/album sort.
+		if len(s.Path)==0 || s.SortMode!="A-Z" {
+			sort.SliceStable(indices,func(i,j int)bool {
+				a,b:=a.library.Tracks[indices[i]],a.library.Tracks[indices[j]]
+				switch s.SortMode {
+				case "Artist":
+					if a.Artist!=b.Artist{return sortText("A-Z",a.Artist,b.Artist)}
+				case "Album":
+					if a.Album!=b.Album{return sortText("A-Z",a.Album,b.Album)}
+				}
+				return sortText(s.SortMode,a.Title,b.Title)
+			})
+		}
+		for _,i:=range indices {
 			t:=a.library.Tracks[i]
 			rows=append(rows,iap.Entry{Index:uint32(i),Name:t.Title})
 		}
 	case "Playlists":
-		for i,p:=range a.library.Playlists{
+		for i,p:=range a.library.Playlists {
 			rows=append(rows,iap.Entry{Index:uint32(i),Name:p.Name})
 		}
+		sort.Slice(rows,func(i,j int)bool{return sortText(s.SortMode,rows[i].Name,rows[j].Name)})
 	default:return fmt.Errorf("unsupported library category %q",s.Category)
 	}
 	start:=min(int(s.Offset),len(rows))
 	end:=min(start+PageSize,len(rows))
 	a.mu.Lock()
 	a.s.Entries=append([]iap.Entry(nil),rows[start:end]...)
+	a.s.Cards=nil
+	if len(cards)>0 {
+		a.s.Cards=append([]MusicCard(nil),cards[start:end]...)
+	}
 	a.s.Total=uint32(len(rows))
 	if a.s.Focus>=len(a.s.Entries){a.s.Focus=max(0,len(a.s.Entries)-1)}
 	a.mu.Unlock()
@@ -88,16 +115,22 @@ func (a *App) playStorage(index uint32) error {
 	if int(index)>=len(a.library.Tracks){return errors.New("selected track is not in the iPod database")}
 	s:=a.Snapshot()
 	output:=s.Settings.Output
-	if output=="" {return errors.New("no audio output selected. Choose Audio > Hub / DAC output first")}
-	found:=false
-	for _,p:=range hardware.ScanAudio() {
-		if !p.Capture && p.ID==output && p.USB && !p.IPod {found=true}
-	}
-	if !found{return errors.New("selected USB DAC is not available. Music cannot play without a real audio output")}
 	t:=a.library.Tracks[index]
-	path,e:=a.library.ResolveFile(t)
-	if e!=nil{return fmt.Errorf("music file cannot be opened safely: %w",e)}
-	if e:=a.player.Start(path,t,output,0);e!=nil{return e}
+	if s.Settings.AudioMode=="simulated" {
+		if err:=a.player.Stop();err!=nil{return err}
+		a.sim.Start(t.Duration)
+	}else{
+		if output=="" {return errors.New("no audio output selected. Choose Audio > Hub / DAC output first")}
+		found:=false
+		for _,p:=range hardware.ScanAudio() {
+			if !p.Capture && p.ID==output && p.USB && !p.IPod {found=true}
+		}
+		if !found{return errors.New("selected USB DAC is not available. Music cannot play without a real audio output")}
+		path,e:=a.library.ResolveFile(t)
+		if e!=nil{return fmt.Errorf("music file cannot be opened safely: %w",e)}
+		if e:=a.player.Start(path,t,output,0);e!=nil{return e}
+		a.sim.Reset()
+	}
 	queue:=a.filteredStorageTracks(s)
 	if len(queue)==0 {
 		for i:=range a.library.Tracks{queue=append(queue,i)}
@@ -106,17 +139,27 @@ func (a *App) playStorage(index uint32) error {
 	a.activeTrack=int(index)
 	a.mu.Lock()
 	shuffle,repeat:=a.s.Now.Shuffle,a.s.Now.Repeat
-	a.s.Now=iap.NowPlaying{Title:t.Title,Artist:t.Artist,Album:t.Album,Duration:t.Duration,Playing:true,Shuffle:shuffle,Repeat:repeat}
+	a.s.Now=iap.NowPlaying{Title:t.Title,Artist:t.Artist,Album:t.Album,Duration:max(t.Duration,1),Playing:true,Shuffle:shuffle,Repeat:repeat}
+	if s.Settings.AudioMode=="simulated" && t.Duration==0 {a.s.Now.Duration=240000}
 	a.s.Screen="playing"
 	a.s.Focus=0
 	a.s.Status="Playing from iPod USB storage (read-only)"
+	if s.Settings.AudioMode=="simulated" {a.s.Status="Simulated playback — no sound output"}
 	a.s.Artwork=nil
 	a.s.HasArtwork=false
 	a.mu.Unlock()
 	// Embedded cover images are optional; iPod ArtworkDB is a separate
 	// container and may hold artwork unavailable in the music files.
-	a.extractEmbeddedArt(path,int(index))
-	a.Log("STORAGE local decode: "+t.Artist+" / "+t.Title)
+	if s.Settings.AudioMode=="usb" {
+		path,e:=a.library.ResolveFile(t)
+		if e==nil {a.extractEmbeddedArt(path,int(index))}
+	}
+	a.recordRecent(t)
+	if s.Settings.AudioMode=="simulated" {
+		a.Log("STORAGE simulated playback (no decoder): "+t.Artist+" / "+t.Title)
+	}else{
+		a.Log("STORAGE local decode: "+t.Artist+" / "+t.Title)
+	}
 	return nil
 }
 func (a *App) extractEmbeddedArt(path string, trackIndex int) {
@@ -145,10 +188,14 @@ func (a *App) storageSeek(percent int) error {
 	t:=a.library.Tracks[a.activeTrack]
 	if t.Duration==0 {return errors.New("this track has no known duration")}
 	pos:=uint32(uint64(t.Duration)*uint64(percent)/100)
-	path,e:=a.library.ResolveFile(t)
-	if e!=nil{return e}
-	out:=a.Snapshot().Settings.Output
-	if e=a.player.Start(path,t,out,pos);e!=nil{return e}
+	if a.Snapshot().Settings.AudioMode=="simulated" {
+		a.sim.Seek(pos)
+	}else{
+		path,e:=a.library.ResolveFile(t)
+		if e!=nil{return e}
+		out:=a.Snapshot().Settings.Output
+		if e=a.player.Start(path,t,out,pos);e!=nil{return e}
+	}
 	a.mu.Lock()
 	a.s.Now.Position=pos
 	a.s.Now.Playing=true
@@ -158,6 +205,13 @@ func (a *App) storageSeek(percent int) error {
 func (a *App) storageControl(name string) error {
 	if a.library==nil{return errors.New("read-only library not mounted")}
 	if name=="play" {
+		if a.Snapshot().Settings.AudioMode=="simulated" && a.sim.duration>0 {
+			playing:=a.sim.Toggle()
+			a.mu.Lock()
+			a.s.Now.Playing=playing
+			a.mu.Unlock()
+			return nil
+		}
 		if a.player.Active() {
 			playing,e:=a.player.Toggle()
 			if e!=nil{return e}
