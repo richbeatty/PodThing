@@ -35,7 +35,13 @@ func (a *App) fetchCover(card MusicCard) {
 	t:=a.library.Tracks[card.TrackIndex]
 	path,e:=a.library.ResolveFile(t)
 	if e!=nil{return}
-	img,e:=decodeEmbeddedCover(path)
+	// Stock iPod artwork is commonly stored in ArtworkDB/.ithmb rather
+	// than inside AAC/MP3 files. Use Apple's thumb index via libgpod
+	// first; the embedded picture decoder remains a fallback.
+	img,e:=a.classicArt.Cover(a.library.Root,t.ID)
+	if e!=nil || img==nil {
+		img,e=decodeEmbeddedCover(path)
+	}
 	if e!=nil || img==nil {return}
 	a.mu.Lock()
 	if a.library!=nil && a.volume!=nil {
