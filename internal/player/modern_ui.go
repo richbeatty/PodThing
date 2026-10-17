@@ -163,6 +163,9 @@ func (p *Painter) modernTile(img *image.RGBA,t ModernTile,s Snapshot,ac color.RG
 	if t.H<=65 {
 		round(img,t.X,t.Y,t.W,t.H,14,panel)
 		p.text(img,t.X+17,t.Y+37,17,true,textColor,t.Title,t.W-30)
+		if t.Subtitle!="" && t.W>300 {
+			p.text(img,t.X+435,t.Y+36,12,false,muted,t.Subtitle,t.W-462)
+		}
 		return
 	}
 	round(img,t.X,t.Y,t.W,t.H,14,panel)
@@ -275,6 +278,10 @@ func (p *Painter) renderModern(v View) *image.RGBA {
 			round(img,x,216,180,53,12,panel)
 			p.text(img,x+12,250,16,true,textColor,label,151)
 		}
+	}
+	if s.Error!="" {
+		round(img,14,378,772,39,12,color.RGBA{89,39,42,255})
+		p.text(img,26,405,15,true,color.RGBA{255,216,216,255},s.Error,741)
 	}
 	return img
 }
