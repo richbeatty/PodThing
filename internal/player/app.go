@@ -385,7 +385,9 @@ func (a *App) openStorage() error {
 	a.coverTried=make(map[string]bool)
 	a.mu.Unlock()
 	a.rebuildHomeAlbums()
-	a.requestCovers(a.Snapshot().HomeAlbums)
+	cards:=a.Snapshot().HomeAlbums
+	if len(cards)>4 {cards=cards[:4]}
+	a.requestCovers(cards)
 	a.Log(fmt.Sprintf("STORAGE mounted %s %s read-only; %d tracks, %d playlists",vol.Device,vol.FSType,len(lib.Tracks),len(lib.Playlists)))
 	return a.load()
 }
