@@ -404,7 +404,27 @@ func (a *App) openStorage() error {
 func (a *App) ejectStorage() error {
 	a.artUse.Lock()
 	defer a.artUse.Unlock()
-	if a.volume==nil {return errors.New("no mounted iPod to eject")}
+	if a.volume==nil {
+		// App restarts may leave a correctly read-only kernel mount behind.
+		// Identify its partition against the physically connected iPod
+		// before ever unmounting it; do not silently unmount other drives.
+		a.Scan()
+		found:=0
+		for _,d:=range a.Snapshot().USB {
+			if !d.IPod {continue}
+			found++
+			vol,lib,err:=storage.RecoverUSB(d.SysPath)
+			if err==nil {a.volume=vol;a.library=lib;break}
+			if !errors.Is(err,os.ErrNotExist) {return fmt.Errorf("cannot verify existing iPod mount: %w",err)}
+		}
+		if a.volume==nil {
+			if a.Snapshot().SafeToDisconnect {return nil}
+			a.mu.Lock()
+			a.s.Status="No iPod storage is mounted by PodThing"
+			a.mu.Unlock()
+			return fmt.Errorf("there is no mounted iPod to eject; use Open iPod music first (detected %d iPod devices)",found)
+		}
+	}
 	if err:=a.player.Stop();err!=nil{return err}
 	a.sim.Reset()
 	// Preserve the last storage session before the state is replaced by
