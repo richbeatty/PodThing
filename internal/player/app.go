@@ -46,6 +46,8 @@ type Snapshot struct {
 	Recent       []RecentItem     `json:"recent"`
 	HomeAlbums   []MusicCard      `json:"home_albums"`
 	Cards        []MusicCard      `json:"cards"`
+	Covers       map[string]image.Image `json:"-"`
+	TrackSummaries map[uint32]string `json:"-"`
 	SafeToDisconnect bool         `json:"safe_to_disconnect"`
 	BasicLast    string           `json:"basic_last,omitempty"`
 	AccessoryProbe bool          `json:"accessory_probe"`
@@ -159,6 +161,10 @@ func (a *App) Snapshot() Snapshot {
 	s.Recent = append([]RecentItem{}, s.Recent...)
 	s.Cards = append([]MusicCard{}, s.Cards...)
 	s.HomeAlbums = append([]MusicCard{}, s.HomeAlbums...)
+	s.Covers=make(map[string]image.Image,len(a.s.Covers))
+	for k,img:=range a.s.Covers {s.Covers[k]=img}
+	s.TrackSummaries=make(map[uint32]string,len(a.s.TrackSummaries))
+	for k,v:=range a.s.TrackSummaries {s.TrackSummaries[k]=v}
 	s.AudioStatus = a.audio.Status()
 	s.Updated = time.Now().UTC().Format(time.RFC3339)
 	return s
@@ -369,6 +375,7 @@ func (a *App) openStorage() error {
 	a.s.Offset=0
 	a.s.Focus=0
 	a.s.TrayOpen=false
+	a.s.Covers=make(map[string]image.Image)
 	a.mu.Unlock()
 	a.rebuildHomeAlbums()
 	a.Log(fmt.Sprintf("STORAGE mounted %s %s read-only; %d tracks, %d playlists",vol.Device,vol.FSType,len(lib.Tracks),len(lib.Playlists)))
@@ -391,6 +398,7 @@ func (a *App) ejectStorage() error {
 	a.s.TrayOpen=false
 	a.s.Cards=nil
 	a.s.HomeAlbums=nil
+	a.s.Covers=nil
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
