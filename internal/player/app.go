@@ -94,6 +94,10 @@ type App struct {
 	activeTrack int
 	queue []int
 	sim SimulatedPlayback
+	// Prevent an artwork reader from keeping a file open during eject.
+	artUse sync.RWMutex
+	artFetch sync.Mutex
+	coverTried map[string]bool
 	audio     hardware.Audio
 	stateDir  string
 	demoTrack int
@@ -245,6 +249,8 @@ func (a *App) Close() {
 	a.mu.Unlock()
 	a.audio.Stop()
 	a.sim.Reset()
+	a.artUse.Lock()
+	defer a.artUse.Unlock()
 	if a.volume!=nil {
 		if e:=a.player.Stop();e==nil {
 			if e=a.volume.Eject();e!=nil {a.Log("iPod needs manual safe eject: "+e.Error())}
@@ -376,12 +382,16 @@ func (a *App) openStorage() error {
 	a.s.Focus=0
 	a.s.TrayOpen=false
 	a.s.Covers=make(map[string]image.Image)
+	a.coverTried=make(map[string]bool)
 	a.mu.Unlock()
 	a.rebuildHomeAlbums()
+	a.requestCovers(a.Snapshot().HomeAlbums)
 	a.Log(fmt.Sprintf("STORAGE mounted %s %s read-only; %d tracks, %d playlists",vol.Device,vol.FSType,len(lib.Tracks),len(lib.Playlists)))
 	return a.load()
 }
 func (a *App) ejectStorage() error {
+	a.artUse.Lock()
+	defer a.artUse.Unlock()
 	if a.volume==nil {return errors.New("no mounted iPod to eject")}
 	if err:=a.player.Stop();err!=nil{return err}
 	a.sim.Reset()
@@ -399,6 +409,7 @@ func (a *App) ejectStorage() error {
 	a.s.Cards=nil
 	a.s.HomeAlbums=nil
 	a.s.Covers=nil
+	a.coverTried=nil
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
