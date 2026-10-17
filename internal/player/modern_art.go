@@ -38,11 +38,31 @@ func (a *App) fetchCover(card MusicCard) {
 	// Stock iPod artwork is commonly stored in ArtworkDB/.ithmb rather
 	// than inside AAC/MP3 files. Use Apple's thumb index via libgpod
 	// first; the embedded picture decoder remains a fallback.
-	img,e:=a.classicArt.Cover(a.library.Root,t.ID)
-	if e!=nil || img==nil {
-		img,e=decodeEmbeddedCover(path)
+	img,dbErr:=a.classicArt.Cover(a.library.Root,t.ID)
+	// A few libraries share one album image between tracks; use another
+	// track from the same album if the representative has no picture.
+	if img==nil {
+		attempts:=0
+		for _,other:=range a.library.Tracks {
+			if other.ID==t.ID||other.Album!=t.Album||other.Artist!=t.Artist{continue}
+			img,_=a.classicArt.Cover(a.library.Root,other.ID)
+			attempts++
+			if img!=nil||attempts>=3 {break}
+		}
 	}
-	if e!=nil || img==nil {return}
+	if img==nil {
+		img,_=decodeEmbeddedCover(path)
+	}
+	if img==nil {
+		// Report the useful reason once rather than filling the diagnostic
+		// report with one warning for each album.
+		a.mu.Lock()
+		first:=!a.artworkWarned
+		a.artworkWarned=true
+		a.mu.Unlock()
+		if first && dbErr!=nil {a.Log("ArtworkDB unavailable for this album: "+dbErr.Error())}
+		return
+	}
 	a.mu.Lock()
 	if a.library!=nil && a.volume!=nil {
 		if a.s.Covers==nil {a.s.Covers=map[string]image.Image{}}
