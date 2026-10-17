@@ -27,4 +27,4 @@ apt-get -c "$cache/apt.conf" -y --download-only --no-install-recommends install 
  hostname init-system-helpers libc-bin login mawk ncurses-base ncurses-bin perl-base \
  sed sysvinit-utils tar util-linux mount dpkg procps systemd-sysv systemd udev kmod \
  seatd weston libasound2t64 alsa-utils dbus iproute2 busybox-static e2fsprogs \
- dosfstools libubootenv-tool dnsmasq-base ffmpeg
+ dosfstools libubootenv-tool dnsmasq-base ffmpeg libgpod4t64
