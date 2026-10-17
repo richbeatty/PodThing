@@ -97,6 +97,9 @@ func BuildModernView(s Snapshot) View {
     v.Tiles=append(v.Tiles,ModernTile{X:26,Y:181+(i-start)*55,W:670,H:52,Title:entry.Name,Subtitle:subtitle,Action:action})
    }
   }
+ case "unmounted":
+  v.Title="Safe to disconnect"
+  v.Tiles=append(v.Tiles,ModernTile{X:30,Y:285,W:380,H:58,Title:"Reconnect iPod library",Action:Action{Name:"storage-open"}})
  case "playing":
   v.Title="Now playing"
   if s.Now.Duration>0{
@@ -214,6 +217,10 @@ func (p *Painter) renderModern(v View) *image.RGBA{
    label:="Grid";if !s.GridView{label="List"}
    p.text(img,642,157,14,false,pale,label,65)
   }
+ }else if s.Screen=="unmounted" {
+  p.text(img,30,150,37,true,pale,"Safe to disconnect",510)
+  p.text(img,30,194,17,false,soft,"The iPod storage was unmounted successfully.",650)
+  p.text(img,30,229,15,false,soft,"You can unplug the cable. No files were changed.",650)
  }else if s.Screen=="playing"{
   p.minimalCover(img,35,91,271,271,s.Artwork)
   p.text(img,345,120,12,false,soft,"NOW PLAYING",315)
@@ -242,7 +249,7 @@ func (p *Painter) renderModern(v View) *image.RGBA{
   p.text(img,27,139,14,false,soft,v.Caption,540)
  }
  for _,tile:=range v.Tiles {p.minimalTile(img,tile,s)}
- if s.Screen!="playing" {
+ if s.Screen!="playing" && s.Screen!="unmounted" {
   fill(img,0,416,720,64,raised)
   p.glyph(img,25,432,"gear",soft)
   name:=s.Now.Title
