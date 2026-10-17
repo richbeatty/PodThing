@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/richbeatty/PodThing/internal/iap"
 	"github.com/richbeatty/PodThing/internal/storage"
@@ -268,8 +269,9 @@ func TestReadOnlyStorageNavigationAndAudioPrerequisite(t *testing.T) {
 	if err:=a.activate(0);err!=nil {t.Fatal(err)}
 	s=a.Snapshot()
 	if s.Category!="Songs"||s.Total!=2||s.Entries[0].Name!="Alpha"{t.Fatalf("songs %+v",s)}
-	// Never fake playback when the Car Thing has no DAC and don't open
-	// the music file without a real audio output.
+	// Explicit USB mode must still refuse to claim playback without
+	// a physical output; silent simulation is covered separately.
+	a.mu.Lock();a.s.Settings.AudioMode="usb";a.mu.Unlock()
 	if err:=a.playStorage(s.Entries[0].Index);err==nil||!strings.Contains(err.Error(),"audio output"){
 		t.Fatalf("unavailable audio unexpectedly started: %v",err)
 	}
@@ -290,4 +292,71 @@ func TestSafeEjectRefusesUnmountError(t *testing.T) {
 	a:=demoApp(t)
 	if err:=a.ejectStorage();err==nil {t.Fatal("eject should refuse an absent mount")}
 	if a.Snapshot().SafeToDisconnect {t.Fatal("never claim safe ejection without a successful unmount")}
+}
+
+func TestSimulatedPlaybackWorksWithoutFilesOrDAC(t *testing.T) {
+	a:=demoApp(t)
+	a.mu.Lock()
+	a.s.Demo=false
+	a.s.StorageMode=true
+	a.s.Connected=true
+	a.s.Settings.AudioMode="simulated"
+	a.mu.Unlock()
+	a.library=&storage.Library{Root:t.TempDir(),Tracks:[]storage.Track{
+		{ID:11,Artist:"Artist",Album:"A",Title:"One",Location:":iPod_Control:Music:missing.m4a",Duration:180000},
+		{ID:12,Artist:"Artist",Album:"A",Title:"Two",Location:":iPod_Control:Music:missing2.m4a",Duration:190000},
+	}}
+	if err:=a.playStorage(0);err!=nil{t.Fatal(err)}
+	state:=a.Snapshot()
+	if state.Now.Title!="One"||!state.Now.Playing||state.Settings.AudioMode!="simulated"{t.Fatalf("incorrect simulator state %+v",state.Now)}
+	a.sim.started=a.sim.started.Add(-2*time.Second)
+	a.Tick()
+	if a.Snapshot().Now.Position<1900 {t.Fatalf("clock did not advance %d",a.Snapshot().Now.Position)}
+	if err:=a.storageControl("play");err!=nil{t.Fatal(err)}
+	paused:=a.Snapshot().Now.Position
+	if a.Snapshot().Now.Playing {t.Fatal("simulator did not pause")}
+	if err:=a.storageSeek(50);err!=nil{t.Fatal(err)}
+	if a.Snapshot().Now.Position!=90000{t.Fatal("simulation seek failed")}
+	if err:=a.storageControl("next");err!=nil{t.Fatal(err)}
+	if a.Snapshot().Now.Title!="Two"{t.Fatal("simulated next failed")}
+	if len(a.Snapshot().Recent)!=2 || a.Snapshot().Recent[0].Title!="Two"{t.Fatalf("history not updated %+v",a.Snapshot().Recent)}
+	if paused==0{t.Fatal("pause should preserve elapsed progress")}
+}
+func TestModernAlbumGridSortingRecentsAndTray(t *testing.T) {
+	a:=demoApp(t)
+	a.library=&storage.Library{Root:t.TempDir(),Tracks:[]storage.Track{
+		{ID:5,Artist:"Zed",Album:"Zebra",Title:"Last",Location:":iPod_Control:Music:x.mp3",Duration:120000},
+		{ID:6,Artist:"Able",Album:"Abbey",Title:"First",Location:":iPod_Control:Music:y.mp3",Duration:125000},
+	}}
+	a.mu.Lock()
+	a.s.StorageMode=true
+	a.s.Connected=true
+	a.s.Demo=false
+	a.s.Settings.AudioMode="simulated"
+	a.s.Screen="library"
+	a.s.Category="Albums"
+	a.s.GridView=true
+	a.s.SortMode="A-Z"
+	a.mu.Unlock()
+	if err:=a.load();err!=nil{t.Fatal(err)}
+	s:=a.Snapshot()
+	if len(s.Cards)!=2||s.Cards[0].Name!="Abbey"{t.Fatalf("album A-Z grid %+v",s.Cards)}
+	view:=a.View()
+	if len(view.Tiles)!=2 || view.Tiles[0].Action.Name!="open-album"{t.Fatalf("album tiles %+v",view.Tiles)}
+	if err:=a.Action(Action{Name:"sort-mode"});err!=nil{t.Fatal(err)}
+	s=a.Snapshot()
+	if s.SortMode!="Z-A"||s.Cards[0].Name!="Zebra"{t.Fatalf("album reverse sorting %+v",s)}
+	if err:=a.Action(Action{Name:"open-album",Text:s.Cards[0].Key});err!=nil{t.Fatal(err)}
+	if a.Snapshot().Category!="Songs"||a.Snapshot().Total!=1{t.Fatal("album card did not open correct album")}
+	if err:=a.playStorage(0);err!=nil{t.Fatal(err)}
+	if err:=a.Action(Action{Name:"home"});err!=nil{t.Fatal(err)}
+	if a.Snapshot().Screen!="home"{t.Fatal("home navigation failed")}
+	if !a.View().State.StorageMode || a.View().Tiles[0].Action.Name!="play-recent" {t.Fatal("recent tile missing")}
+	if err:=a.Action(Action{Name:"tray"});err!=nil{t.Fatal(err)}
+	if !a.Snapshot().TrayOpen{t.Fatal("tray failed to open")}
+	if err:=a.Action(Action{Name:"tray-close"});err!=nil{t.Fatal(err)}
+	if a.Snapshot().TrayOpen{t.Fatal("tray failed to close")}
+	p,err:=NewPainter();if err!=nil{t.Fatal(err)}
+	img:=p.Render(a.View())
+	if img.Bounds().Dx()!=800||img.Bounds().Dy()!=480{t.Fatal("modern UI wrong screen size")}
 }

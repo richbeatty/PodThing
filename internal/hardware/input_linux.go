@@ -143,7 +143,11 @@ func readInput(ctx context.Context, path, name string, emit func(Input), log fun
 					lx, ly := y, 479-x
 					if x >= 0 && x < 480 && y >= 0 && y < 800 {
 						dy := ly - startY
-						if dy > 35 || dy < -35 {
+						if startY < 78 && dy > 65 && abs(lx-startX) < 110 {
+							emit(Input{Action:"tray"})
+						} else if dy < -65 && abs(lx-startX) < 110 {
+							emit(Input{Action:"tray-close"})
+						} else if dy > 35 || dy < -35 {
 							emit(Input{Action: "scroll", Value: -dy / 48})
 						} else if abs(lx-startX) < 35 {
 							emit(Input{Action: "tap", X: lx, Y: ly})

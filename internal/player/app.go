@@ -29,6 +29,7 @@ type Settings struct {
 	InvertWheel bool      `json:"invert_wheel"`
 	Capture     string    `json:"capture"`
 	Output      string    `json:"output"`
+	AudioMode   string    `json:"audio_mode"`
 }
 type Snapshot struct {
 	Version     string            `json:"version"`
@@ -39,6 +40,14 @@ type Snapshot struct {
 	AuthStage    string           `json:"auth_stage,omitempty"`
 	BasicRemote  bool             `json:"basic_remote"`
 	StorageMode  bool             `json:"storage_mode"`
+	TrayOpen     bool             `json:"tray_open"`
+	SortMode     string           `json:"sort_mode"`
+	GridView     bool             `json:"grid_view"`
+	Recent       []RecentItem     `json:"recent"`
+	HomeAlbums   []MusicCard      `json:"home_albums"`
+	Cards        []MusicCard      `json:"cards"`
+	Covers       map[string]image.Image `json:"-"`
+	TrackSummaries map[uint32]string `json:"-"`
 	SafeToDisconnect bool         `json:"safe_to_disconnect"`
 	BasicLast    string           `json:"basic_last,omitempty"`
 	AccessoryProbe bool          `json:"accessory_probe"`
@@ -84,6 +93,12 @@ type App struct {
 	player    storage.Playback
 	activeTrack int
 	queue []int
+	sim SimulatedPlayback
+	// Prevent an artwork reader from keeping a file open during eject.
+	artUse sync.RWMutex
+	artFetch sync.Mutex
+	coverTried map[string]bool
+	coverOrder []string
 	audio     hardware.Audio
 	stateDir  string
 	demoTrack int
@@ -94,7 +109,7 @@ func New(demo bool, stateDir string) (*App, error) {
 	if e := os.MkdirAll(stateDir, 0700); e != nil {
 		return nil, e
 	}
-	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect your iPod, then choose Connect", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}}}}
+	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect your iPod, then choose Connect", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}, AudioMode: "simulated"}}}
 	b, e := os.ReadFile(filepath.Join(stateDir, "settings.json"))
 	if e == nil {
 		if e = json.Unmarshal(b, &a.s.Settings); e != nil {
@@ -103,6 +118,10 @@ func New(demo bool, stateDir string) (*App, error) {
 	} else if !os.IsNotExist(e) {
 		return nil, e
 	}
+	if a.s.Settings.AudioMode!="usb" {a.s.Settings.AudioMode="simulated"}
+	a.s.SortMode="A-Z"
+	a.s.GridView=true
+	a.loadRecent()
 	for i, v := range a.s.Settings.Buttons {
 		valid := false
 		for _, allowed := range bindings {
@@ -144,6 +163,13 @@ func (a *App) Snapshot() Snapshot {
 	s.USB = append([]hardware.Device{}, s.USB...)
 	s.Audio = append([]hardware.PCM{}, s.Audio...)
 	s.Log = append([]string{}, s.Log...)
+	s.Recent = append([]RecentItem{}, s.Recent...)
+	s.Cards = append([]MusicCard{}, s.Cards...)
+	s.HomeAlbums = append([]MusicCard{}, s.HomeAlbums...)
+	s.Covers=make(map[string]image.Image,len(a.s.Covers))
+	for k,img:=range a.s.Covers {s.Covers[k]=img}
+	s.TrackSummaries=make(map[uint32]string,len(a.s.TrackSummaries))
+	for k,v:=range a.s.TrackSummaries {s.TrackSummaries[k]=v}
 	s.AudioStatus = a.audio.Status()
 	s.Updated = time.Now().UTC().Format(time.RFC3339)
 	return s
@@ -223,9 +249,17 @@ func (a *App) Close() {
 	a.closed = true
 	a.mu.Unlock()
 	a.audio.Stop()
+	a.sim.Reset()
+	a.artUse.Lock()
+	defer a.artUse.Unlock()
 	if a.volume!=nil {
 		if e:=a.player.Stop();e==nil {
-			if e=a.volume.Eject();e!=nil {a.Log("iPod needs manual safe eject: "+e.Error())}
+			if e=a.volume.Eject();e!=nil {
+				a.Log("iPod needs manual safe eject: "+e.Error())
+			}else{
+				a.volume=nil
+				a.library=nil
+			}
 		}
 	}
 	if a.client != nil {
@@ -347,18 +381,29 @@ func (a *App) openStorage() error {
 	a.s.BasicRemote=false
 	a.s.Name="iPod Music (read-only)"
 	a.s.Status=fmt.Sprintf("Read-only music library: %d tracks, %d playlists",len(lib.Tracks),len(lib.Playlists))
-	a.s.Screen="library"
+	a.s.Screen="home"
 	a.s.Category="Artists"
 	a.s.Path=nil
 	a.s.Offset=0
 	a.s.Focus=0
+	a.s.TrayOpen=false
+	a.s.Covers=make(map[string]image.Image)
+	a.coverTried=make(map[string]bool)
+	a.coverOrder=nil
 	a.mu.Unlock()
+	a.rebuildHomeAlbums()
+	cards:=a.Snapshot().HomeAlbums
+	if len(cards)>4 {cards=cards[:4]}
+	a.requestCovers(cards)
 	a.Log(fmt.Sprintf("STORAGE mounted %s %s read-only; %d tracks, %d playlists",vol.Device,vol.FSType,len(lib.Tracks),len(lib.Playlists)))
 	return a.load()
 }
 func (a *App) ejectStorage() error {
+	a.artUse.Lock()
+	defer a.artUse.Unlock()
 	if a.volume==nil {return errors.New("no mounted iPod to eject")}
 	if err:=a.player.Stop();err!=nil{return err}
+	a.sim.Reset()
 	// Preserve the last storage session before the state is replaced by
 	// Safe to Disconnect, for recovery-mode diagnostics.
 	if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("preserve storage session before eject: %w",err)}
@@ -369,6 +414,12 @@ func (a *App) ejectStorage() error {
 	a.mu.Lock()
 	a.s.StorageMode=false
 	a.s.Connected=false
+	a.s.TrayOpen=false
+	a.s.Cards=nil
+	a.s.HomeAlbums=nil
+	a.s.Covers=nil
+	a.coverTried=nil
+	a.coverOrder=nil
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
@@ -520,6 +571,9 @@ func (a *App) activate(index int) error {
 		return errors.New("no item selected")
 	}
 	entry := s.Entries[index]
+	if a.library!=nil && s.Category=="Albums" && index<len(s.Cards) {
+		return a.openAlbum(s.Cards[index].Key)
+	}
 	if s.Category == "Songs" {
 		if a.library!=nil {return a.playStorage(entry.Index)}
 		if s.Demo {
@@ -562,6 +616,13 @@ func (a *App) activate(index int) error {
 }
 func (a *App) back() error {
 	s := a.Snapshot()
+	if s.TrayOpen {return a.Action(Action{Name:"tray-close"})}
+	if s.StorageMode {
+		if s.Screen=="home" {return nil}
+		if s.Screen=="library" && len(s.Path)==0 {
+			return a.Action(Action{Name:"home"})
+		}
+	}
 	if strings.HasPrefix(s.Screen, "settings-") {
 		a.mu.Lock()
 		a.s.Screen = "settings"
@@ -594,6 +655,14 @@ func (a *App) back() error {
 }
 func (a *App) refresh() error {
 	if a.library!=nil {
+		if a.Snapshot().Settings.AudioMode=="simulated" {
+			position,playing:=a.sim.State()
+			a.mu.Lock()
+			a.s.Now.Position=position
+			a.s.Now.Playing=playing
+			a.mu.Unlock()
+			return nil
+		}
 		track,position,playing,errText:=a.player.State()
 		a.mu.Lock()
 		a.s.Now.Position=position
@@ -642,6 +711,10 @@ func (a *App) Tick() {
 	}
 	if a.library != nil {
 		_ = a.refresh()
+		if a.Snapshot().Settings.AudioMode=="simulated" {
+			a.simulatedTick()
+			return
+		}
 		if a.player.TakeCompletion() {
 			state:=a.Snapshot()
 			if state.Now.Repeat==1 {
@@ -682,16 +755,31 @@ func (a *App) Action(v Action) error {
 		}
 		return nil
 	}
+	if v.Name=="tray" {
+		a.mu.Lock()
+		a.s.TrayOpen=!a.s.TrayOpen
+		a.mu.Unlock()
+		return nil
+	}
+	if v.Name=="tray-close" {
+		a.mu.Lock();a.s.TrayOpen=false;a.mu.Unlock()
+		return nil
+	}
 	if strings.HasPrefix(v.Name, "preset") {
 		i := int(v.Name[len(v.Name)-1] - '1')
 		if i < 0 || i > 3 {
 			return errors.New("invalid preset")
 		}
 		s := a.Snapshot()
+		a.mu.Lock();a.s.TrayOpen=false;a.mu.Unlock()
 		return a.binding(s.Settings.Buttons[i])
 	}
 	if v.Name == "scroll" {
 		return a.scroll(v.Value)
+	}
+	if v.Name=="home" {
+		a.mu.Lock();a.s.Screen="home";a.s.TrayOpen=false;a.s.Focus=0;a.mu.Unlock()
+		return nil
 	}
 	if v.Name == "settings" || v.Name == "diagnostics" || v.Name == "playing" || v.Name == "settings-page" {
 		screen := v.Name
@@ -707,6 +795,7 @@ func (a *App) Action(v Action) error {
 		a.mu.Lock()
 		a.s.Screen = screen
 		a.s.Focus = 0
+		a.s.TrayOpen=false
 		a.mu.Unlock()
 		return nil
 	}
@@ -724,6 +813,27 @@ func (a *App) Action(v Action) error {
 	return a.run(func() error {
 		s := a.Snapshot()
 		switch v.Name {
+		case "audio-mode":
+			if v.Text!="simulated" && v.Text!="usb" {return errors.New("unknown playback output mode")}
+			if a.library!=nil {
+				if err:=a.player.Stop();err!=nil{return err}
+				a.sim.Reset()
+			}
+			a.mu.Lock()
+			a.s.Settings.AudioMode=v.Text
+			a.s.Now.Playing=false
+			a.s.Now.Position=0
+			a.mu.Unlock()
+			return a.save()
+		case "sort-mode":
+			return a.changeSort()
+		case "view-mode":
+			a.mu.Lock();a.s.GridView=!a.s.GridView;a.mu.Unlock()
+			return nil
+		case "play-recent":
+			return a.playRecent(uint32(v.Value))
+		case "open-album":
+			return a.openAlbum(v.Text)
 		case "storage-open":
 			return a.openStorage()
 		case "storage-eject":
@@ -1008,6 +1118,17 @@ func (a *App) scroll(delta int) error {
 		delta = -delta
 	}
 	delta = max(-100, min(delta, 100))
+	if s.StorageMode && s.Screen=="library" && s.Category=="Albums" && s.GridView {
+		return a.run(func()error {
+			a.mu.Lock()
+			offset:=int64(a.s.Offset)+int64(delta)*4
+			offset=max(0,min(offset,max(0,int64(a.s.Total)-8)))
+			a.s.Offset=uint32(offset)
+			a.s.Focus=0
+			a.mu.Unlock()
+			return a.load()
+		})
+	}
 	count := len(s.Entries)
 	if s.Screen != "library" {
 		count = len(a.View().Rows)
