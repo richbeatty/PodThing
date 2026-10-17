@@ -98,7 +98,16 @@ func (a *App) loadStorage(s Snapshot) error {
 	default:return fmt.Errorf("unsupported library category %q",s.Category)
 	}
 	start:=min(int(s.Offset),len(rows))
-	end:=min(start+PageSize,len(rows))
+	pageSize:=PageSize
+	if s.Category=="Albums" && s.GridView {pageSize=8}
+	end:=min(start+pageSize,len(rows))
+	summaries:=map[uint32]string{}
+	if s.Category=="Songs" {
+		for _,row:=range rows[start:end] {
+			t:=a.library.Tracks[row.Index]
+			summaries[row.Index]=t.Artist+" · "+t.Album
+		}
+	}
 	a.mu.Lock()
 	a.s.Entries=append([]iap.Entry(nil),rows[start:end]...)
 	a.s.Cards=nil
@@ -106,6 +115,7 @@ func (a *App) loadStorage(s Snapshot) error {
 		a.s.Cards=append([]MusicCard(nil),cards[start:end]...)
 	}
 	a.s.Total=uint32(len(rows))
+	a.s.TrackSummaries=summaries
 	if a.s.Focus>=len(a.s.Entries){a.s.Focus=max(0,len(a.s.Entries)-1)}
 	a.mu.Unlock()
 	return nil
@@ -186,8 +196,10 @@ func (a *App) storageSeek(percent int) error {
 	if a.library==nil {return errors.New("music library is not open")}
 	if percent<0||percent>100{return errors.New("seek position must be 0-100")}
 	t:=a.library.Tracks[a.activeTrack]
-	if t.Duration==0 {return errors.New("this track has no known duration")}
-	pos:=uint32(uint64(t.Duration)*uint64(percent)/100)
+	duration:=t.Duration
+	if duration==0 && a.Snapshot().Settings.AudioMode=="simulated" {duration=240000}
+	if duration==0 {return errors.New("this track has no known duration")}
+	pos:=uint32(uint64(duration)*uint64(percent)/100)
 	if a.Snapshot().Settings.AudioMode=="simulated" {
 		a.sim.Seek(pos)
 	}else{
