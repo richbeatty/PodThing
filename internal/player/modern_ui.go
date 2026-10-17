@@ -197,7 +197,7 @@ func (p *Painter) renderModern(v View) *image.RGBA{
  p.text(img,27,44,21,true,pale,"PodThing",174)
  p.text(img,398,43,15,false,soft,"Library",100)
  p.text(img,530,43,15,false,soft,"Playing",100)
- p.text(img,650,43,20,false,pale,"⌄",45)
+ p.text(img,647,43,14,false,pale,"More",53)
  fill(img,26,67,675,1,hair)
  if s.Screen=="home" {
   p.text(img,27,113,29,true,pale,"Your music",450)
