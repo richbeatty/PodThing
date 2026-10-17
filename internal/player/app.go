@@ -254,7 +254,12 @@ func (a *App) Close() {
 	defer a.artUse.Unlock()
 	if a.volume!=nil {
 		if e:=a.player.Stop();e==nil {
-			if e=a.volume.Eject();e!=nil {a.Log("iPod needs manual safe eject: "+e.Error())}
+			if e=a.volume.Eject();e!=nil {
+				a.Log("iPod needs manual safe eject: "+e.Error())
+			}else{
+				a.volume=nil
+				a.library=nil
+			}
 		}
 	}
 	if a.client != nil {
@@ -766,6 +771,7 @@ func (a *App) Action(v Action) error {
 			return errors.New("invalid preset")
 		}
 		s := a.Snapshot()
+		a.mu.Lock();a.s.TrayOpen=false;a.mu.Unlock()
 		return a.binding(s.Settings.Buttons[i])
 	}
 	if v.Name == "scroll" {
@@ -789,6 +795,7 @@ func (a *App) Action(v Action) error {
 		a.mu.Lock()
 		a.s.Screen = screen
 		a.s.Focus = 0
+		a.s.TrayOpen=false
 		a.mu.Unlock()
 		return nil
 	}
