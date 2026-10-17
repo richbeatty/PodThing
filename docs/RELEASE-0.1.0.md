@@ -1,3 +1,44 @@
+## 0.1.0-test.8: modern library and silent simulation
+
+**Playback defaults to Simulated** on existing and new settings until you
+select the physical **USB DAC** mode under Settings → Audio. Simulated
+playback updates progress, pause/resume, seek, next/previous, shuffle, repeat,
+queue and Recently Played. It does **not** read/decode audio tracks or send
+sound to the car. The USB DAC path remains available, and errors honestly
+when no usable audio output is attached.
+
+With an iPod mounted read-only, PodThing opens **Home**:
+- Recently Played track cards, saved locally in
+  `/var/lib/podthing/recents.json` rather than on the iPod; an initial
+  empty history shows album suggestions.
+- Touch-friendly Home/Library/Playing destinations.
+- Artists, Albums, Songs and Playlists tabs with sorting
+  (A–Z, Z–A, Artist, Album); album art card grid or list.
+- Tap/scroll albums to browse songs. Album selection preserves both
+  artist and album identity.
+- A swipe-down Quick Actions tray hides four configurable presets until
+  needed. Swipe up (or tap outside) to dismiss. Existing physical
+  preset buttons continue working. A small chevron opens it without
+  swiping; the browser console supports the same gesture.
+- Modern Now Playing with position seeking and adaptive accent when real
+  album artwork is available.
+
+Artwork: PodThing asynchronously extracts embedded image data from
+tracks, with short FFmpeg timeouts and a bounded thumbnail cache.
+A **generic music placeholder**, not invented album art, appears when
+the iPod stores its covers only in proprietary ArtworkDB/.ithmb files.
+Those formats remain to be implemented.
+
+Safety: disk and partition remain kernel-locked read-only and the
+filesystem mounted read-only. Artwork workers finish before an eject;
+the player displays safe-to-unplug only after a successful unmount.
+No tracks, artwork, play counts, music files or metadata are modified
+on the iPod.
+
+This release is experimental until tested on physical Car Thing and
+iPod Classic hardware. QEMU/UI tests cannot establish real USB or DAC
+compatibility.
+
 ## Experimental read-only iPod music player
 
 This branch adds a stock-firmware USB storage pathway, **not** an MFi
