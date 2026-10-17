@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/richbeatty/PodThing/internal/storage"
 )
 
 // requestCovers requests only the visible album cards. The worker is
@@ -73,4 +72,3 @@ func decodeEmbeddedCover(path string) (image.Image,error) {
 	return img,nil
 }
 
-var _ storage.Track
