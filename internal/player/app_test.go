@@ -360,3 +360,42 @@ func TestModernAlbumGridSortingRecentsAndTray(t *testing.T) {
 	img:=p.Render(a.View())
 	if img.Bounds().Dx()!=800||img.Bounds().Dy()!=480{t.Fatal("modern UI wrong screen size")}
 }
+
+func TestSafeToDisconnectRemainsSafeOnSecondEject(t *testing.T) {
+	a:=demoApp(t)
+	a.mu.Lock()
+	a.s.SafeToDisconnect=true
+	a.s.Screen="unmounted"
+	a.s.StorageMode=false
+	a.mu.Unlock()
+	if err:=a.ejectStorage();err!=nil{t.Fatalf("second eject should be harmless after confirmed unmount: %v",err)}
+	state:=a.Snapshot()
+	if !state.SafeToDisconnect||state.Screen!="unmounted"{t.Fatal("idempotent eject lost safe-to-disconnect state")}
+	if len(a.View().Tiles)!=1||a.View().Tiles[0].Action.Name!="storage-open"{t.Fatal("safe-to-disconnect screen missing reconnect option")}
+}
+func TestMinimalUIIsNeutralAndCriticalButtonsClearOfKnob(t *testing.T) {
+	a:=demoApp(t)
+	a.mu.Lock()
+	a.s.StorageMode=true
+	a.s.Demo=false
+	a.s.Settings.AudioMode="simulated"
+	a.s.Screen="playing"
+	a.s.Now.Title="Hang Loose — Live At KCRW"
+	a.s.Now.Artist="Alabama Shakes"
+	a.s.Now.Duration=180000
+	a.s.Now.Position=30000
+	a.mu.Unlock()
+	view:=a.View()
+	p,e:=NewPainter();if e!=nil{t.Fatal(e)}
+	img:=p.Render(view)
+	if img.Bounds().Dx()!=800||img.Bounds().Dy()!=480{t.Fatal("bad Car Thing geometry")}
+	r,g,b,_:=img.At(775,170).RGBA()
+	if b>r+2000||b>g+2000{t.Fatalf("background should not have a saturated blue wash: rgb16 %d,%d,%d",r,g,b)}
+	for _,name:=range []string{"play","next","previous","tray"}{
+		found:=false
+		for _,hit:=range view.Hits {
+			if hit.Action.Name==name&&hit.X+hit.W<=716 {found=true}
+		}
+		if !found{t.Fatalf("%s is not reachable left of hardware dial",name)}
+	}
+}

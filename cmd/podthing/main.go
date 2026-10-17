@@ -32,6 +32,7 @@ func run() error {
 	state := flag.String("state-dir", "podthing-state", "writable settings/report directory")
 	socket := flag.String("wayland-socket", "", "Weston socket (default: XDG_RUNTIME_DIR/WAYLAND_DISPLAY)")
 	screenshot := flag.String("screenshot", "", "save one 800x480 PNG and exit")
+	previewModern:=flag.Bool("preview-modern",false,"render a fictional modern player preview (demo only)")
 	diagnose := flag.Bool("diagnose", false, "print read-only USB/audio diagnostics and exit")
 	version := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -56,6 +57,7 @@ func run() error {
 		return e
 	}
 	if *screenshot != "" {
+		if *previewModern && *demo {a.PreviewModern()}
 		f, e := os.Create(*screenshot)
 		if e != nil {
 			return e
