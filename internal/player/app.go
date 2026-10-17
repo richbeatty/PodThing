@@ -253,6 +253,7 @@ func (a *App) Close() {
 	a.sim.Reset()
 	a.artUse.Lock()
 	defer a.artUse.Unlock()
+	a.classicArt.Close()
 	if a.volume!=nil {
 		if e:=a.player.Stop();e==nil {
 			if e=a.volume.Eject();e!=nil {
@@ -422,6 +423,7 @@ func (a *App) ejectStorage() error {
 	a.s.Covers=nil
 	a.coverTried=nil
 	a.coverOrder=nil
+	a.classicArt.Close()
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
