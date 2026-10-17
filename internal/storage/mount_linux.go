@@ -63,32 +63,39 @@ func setBlockReadOnly(path string) error {
 	if errno!=0{return fmt.Errorf("BLKROSET %s: %w",path,errno)}
 	return nil
 }
-// RecoverUSB attaches to an already-mounted, read-only volume belonging to
-// this specific enumerated iPod. This is needed after an app restart: the
-// kernel may still have the mount even though PodThing lost *Volume.
+// InspectManagedMount permits recovery only for a kernel read-only
+// filesystem located at the *exact* PodThing mountpoint and backed by a
+// partition of the enumerated iPod. Never unmount an unrelated disk.
+func InspectManagedMount(mountinfo []byte, partitions []string) (*Volume,error) {
+	for _,line:=range strings.Split(string(mountinfo),"\n") {
+		fields:=strings.Fields(line)
+		if len(fields)<10||fields[4]!=mountPoint{continue}
+		sep:=-1
+		for i,v:=range fields{if v=="-" {sep=i;break}}
+		if sep<0||sep+2>=len(fields){return nil,errors.New("invalid managed iPod mount metadata")}
+		fs,dev:=fields[sep+1],fields[sep+2]
+		if fs!="vfat"&&fs!="hfsplus"{return nil,errors.New("managed mount has unexpected filesystem")}
+		if !strings.Contains(","+fields[5]+",",",ro,"){return nil,errors.New("managed iPod mount is not read-only")}
+		for _,part:=range partitions{
+			if dev!=filepath.Join("/dev",part){continue}
+			return &Volume{Device:dev,Disk:filepath.Join("/dev",diskName(part)),Root:mountPoint,FSType:fs,mounted:true},nil
+		}
+		return nil,errors.New("managed mount does not belong to the connected iPod")
+	}
+	return nil,os.ErrNotExist
+}
+// RecoverUSB attaches to an existing, verified iPod mount after an app
+// restart, then re-reads iTunesDB without modifying anything on the disk.
 func RecoverUSB(sysPath string) (*Volume,*Library,error) {
 	parts,e:=diskForUSB(sysPath)
 	if e!=nil{return nil,nil,e}
 	raw,e:=os.ReadFile("/proc/self/mountinfo")
 	if e!=nil{return nil,nil,e}
-	for _,line:=range strings.Split(string(raw),"\n") {
-		fields:=strings.Fields(line)
-		if len(fields)<10||fields[4]!=mountPoint{continue}
-		sep:=-1
-		for i,v:=range fields{if v=="-" {sep=i;break}}
-		if sep<0||sep+2>=len(fields){return nil,nil,errors.New("invalid managed iPod mount metadata")}
-		fs,dev:=fields[sep+1],fields[sep+2]
-		if fs!="vfat"&&fs!="hfsplus"{return nil,nil,errors.New("managed mount has unexpected filesystem")}
-		if !strings.Contains(","+fields[5]+",",",ro,"){return nil,nil,errors.New("managed iPod mount is not read-only")}
-		for _,part:=range parts {
-			if dev!=filepath.Join("/dev",part){continue}
-			lib,e:=Read(mountPoint)
-			if e!=nil{return nil,nil,fmt.Errorf("read recovered iPod library: %w",e)}
-			return &Volume{Device:dev,Disk:filepath.Join("/dev",diskName(part)),Root:mountPoint,FSType:fs,mounted:true},lib,nil
-		}
-		return nil,nil,errors.New("managed mount does not belong to the connected iPod")
-	}
-	return nil,nil,os.ErrNotExist
+	vol,e:=InspectManagedMount(raw,parts)
+	if e!=nil{return nil,nil,e}
+	lib,e:=Read(mountPoint)
+	if e!=nil{return nil,nil,fmt.Errorf("read recovered iPod library: %w",e)}
+	return vol,lib,nil
 }
 
 // OpenUSB changes NO bytes on disk. Both the containing USB disk and its
