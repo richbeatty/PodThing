@@ -99,6 +99,7 @@ type App struct {
 	artFetch sync.Mutex
 	coverTried map[string]bool
 	coverOrder []string
+	classicArt classicArtwork
 	audio     hardware.Audio
 	stateDir  string
 	demoTrack int
@@ -390,6 +391,7 @@ func (a *App) openStorage() error {
 	a.s.Covers=make(map[string]image.Image)
 	a.coverTried=make(map[string]bool)
 	a.coverOrder=nil
+	a.classicArt.Close()
 	a.mu.Unlock()
 	a.rebuildHomeAlbums()
 	cards:=a.Snapshot().HomeAlbums
