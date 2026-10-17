@@ -64,13 +64,14 @@ func (c *classicArtwork) Cover(root string,id uint32)(image.Image,error){
  defer c.mu.Unlock()
  if e:=c.prepare(root);e!=nil{return nil,e}
  if c.root!=root {return nil,errors.New("artwork worker attached to different iPod")}
- if _,e:=fmt.Fprintf(c.stdin,"%d\n",id);e!=nil{c.closeLocked();return nil,e}
+ if _,e:=fmt.Fprintf(c.stdin,"%d\n",id);e!=nil{c.closeLocked();c.readErr=e;return nil,e}
  line,e:=c.readLine(5*time.Second)
- if e!=nil{c.closeLocked();return nil,e}
+ if e!=nil{c.closeLocked();c.readErr=e;return nil,e}
  if line=="NONE"{return nil,errors.New("no indexed iPod artwork for this track")}
  if !strings.HasPrefix(line,"OK /tmp/podthing-art-") {
   c.closeLocked()
-  return nil,fmt.Errorf("iPod artwork worker: %s",line)
+  c.readErr=fmt.Errorf("iPod artwork worker: %s",line)
+  return nil,c.readErr
  }
  path:=strings.TrimPrefix(line,"OK ")
  defer os.Remove(path)
