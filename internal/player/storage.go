@@ -118,6 +118,7 @@ func (a *App) loadStorage(s Snapshot) error {
 	a.s.TrackSummaries=summaries
 	if a.s.Focus>=len(a.s.Entries){a.s.Focus=max(0,len(a.s.Entries)-1)}
 	a.mu.Unlock()
+	if s.Category=="Albums" {a.requestCovers(cards[start:end])}
 	return nil
 }
 func (a *App) playStorage(index uint32) error {
@@ -155,8 +156,9 @@ func (a *App) playStorage(index uint32) error {
 	a.s.Focus=0
 	a.s.Status="Playing from iPod USB storage (read-only)"
 	if s.Settings.AudioMode=="simulated" {a.s.Status="Simulated playback — no sound output"}
-	a.s.Artwork=nil
-	a.s.HasArtwork=false
+	a.s.Artwork=s.Covers[albumKey(t.Artist,t.Album)]
+	a.s.HasArtwork=a.s.Artwork!=nil
+	a.s.Accent=ArtworkAccent(a.s.Artwork)
 	a.mu.Unlock()
 	// Embedded cover images are optional; iPod ArtworkDB is a separate
 	// container and may hold artwork unavailable in the music files.
@@ -165,6 +167,7 @@ func (a *App) playStorage(index uint32) error {
 		if e==nil {a.extractEmbeddedArt(path,int(index))}
 	}
 	a.recordRecent(t)
+	a.requestCovers([]MusicCard{{Key:albumKey(t.Artist,t.Album),TrackIndex:index}})
 	if s.Settings.AudioMode=="simulated" {
 		a.Log("STORAGE simulated playback (no decoder): "+t.Artist+" / "+t.Title)
 	}else{
