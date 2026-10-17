@@ -50,6 +50,9 @@ func (a *App) recordRecent(t storage.Track) {
 		if err=os.Rename(tmp,dst);err!=nil {a.Log("Recent history couldn't be saved: "+err.Error())}
 	}else{a.Log("Recent history couldn't be saved: "+err.Error())}
 	a.rebuildHomeAlbums()
+	home:=a.Snapshot().HomeAlbums
+	if len(home)>4 {home=home[:4]}
+	a.requestCovers(home)
 }
 func albumKey(artist,album string) string {return artist+""+album}
 func (a *App) rebuildHomeAlbums() {
