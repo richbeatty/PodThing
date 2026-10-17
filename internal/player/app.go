@@ -451,7 +451,7 @@ func (a *App) ejectStorage() error {
 	a.s.Entries=nil
 	a.s.Total=0
 	a.s.Path=nil
-	a.s.Screen="settings-usb"
+	a.s.Screen="unmounted"
 	a.mu.Unlock()
 	a.Log("STORAGE unmounted cleanly; safe for host to unplug")
 	return nil
