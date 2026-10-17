@@ -40,7 +40,18 @@ func (a *App) fetchCover(card MusicCard) {
 	a.mu.Lock()
 	if a.library!=nil && a.volume!=nil {
 		if a.s.Covers==nil {a.s.Covers=map[string]image.Image{}}
+		if _,ok:=a.s.Covers[card.Key];!ok {
+			a.coverOrder=append(a.coverOrder,card.Key)
+		}
 		a.s.Covers[card.Key]=img
+		// Cap decoded artwork: 72 images * 160px is cheap on Car Thing.
+		// Evicted tiles may be fetched again when scrolled into view.
+		for len(a.coverOrder)>72 {
+			old:=a.coverOrder[0]
+			a.coverOrder=a.coverOrder[1:]
+			delete(a.s.Covers,old)
+			delete(a.coverTried,old)
+		}
 		if a.activeTrack>=0 && a.activeTrack<len(a.library.Tracks) {
 			current:=a.library.Tracks[a.activeTrack]
 			if albumKey(current.Artist,current.Album)==card.Key && a.s.Now.Title==current.Title {
