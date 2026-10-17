@@ -42,7 +42,7 @@ func BuildModernView(s Snapshot) View {
 			for i,r:=range s.Recent {
 				if i==4 {break}
 				v.Tiles=append(v.Tiles,ModernTile{X:20+i*194,Y:137,W:183,H:170,
-					Title:r.Title,Subtitle:r.Artist,Action:Action{Name:"play-recent",Value:int(r.ID)}})
+					Title:r.Title,Subtitle:r.Artist,Art:s.Covers[albumKey(r.Artist,r.Album)],Action:Action{Name:"play-recent",Value:int(r.ID)}})
 			}
 		}else{
 			v.Caption="Albums to explore"
@@ -86,8 +86,10 @@ func BuildModernView(s Snapshot) View {
 				if s.Category=="Songs" && int(entry.Index)<len(s.TrackSummaries) {
 					subtitle=s.TrackSummaries[entry.Index]
 				}
+				action:=Action{Name:"open",Value:i}
+				if s.Category=="Albums" && i<len(s.Cards){action=Action{Name:"open-album",Text:s.Cards[i].Key}}
 				v.Tiles=append(v.Tiles,ModernTile{X:18,Y:175+(i-start)*58,W:762,H:53,
-					Title:entry.Name,Subtitle:subtitle,Action:Action{Name:"open",Value:i}})
+					Title:entry.Name,Subtitle:subtitle,Action:action})
 			}
 		}
 	case "playing":
@@ -126,6 +128,9 @@ func BuildModernView(s Snapshot) View {
 	}
 	for _,tile:=range v.Tiles {
 		v.Hits=append(v.Hits,Hit{tile.X,tile.Y,tile.W,tile.H,tile.Action})
+		if s.Screen=="home" {
+			v.Rows=append(v.Rows,Row{Title:tile.Title,Detail:tile.Subtitle,Action:tile.Action})
+		}
 	}
 	if s.TrayOpen {
 		// Modal tray takes the touch surface until dismissed.
