@@ -563,6 +563,9 @@ func (a *App) activate(index int) error {
 		return errors.New("no item selected")
 	}
 	entry := s.Entries[index]
+	if a.library!=nil && s.Category=="Albums" && index<len(s.Cards) {
+		return a.openAlbum(s.Cards[index].Key)
+	}
 	if s.Category == "Songs" {
 		if a.library!=nil {return a.playStorage(entry.Index)}
 		if s.Demo {
