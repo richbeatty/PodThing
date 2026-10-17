@@ -104,6 +104,7 @@ func BuildModernView(s Snapshot) View {
 		base:=buildLegacyView(s)
 		v.Title=base.Title
 		v.Caption=base.Caption
+		v.Rows=base.Rows
 		// Settings retain their existing features but use a bigger touch
 		// list, independent of physical navigation.
 		visible:=5
