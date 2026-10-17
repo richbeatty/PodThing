@@ -36,7 +36,7 @@ type View struct {
 
 func (a *App) View() View { return BuildView(a.Snapshot()) }
 func BuildView(s Snapshot) View {
-	if s.StorageMode {return BuildModernView(s)}
+	if s.StorageMode || s.SafeToDisconnect {return BuildModernView(s)}
 	return buildLegacyView(s)
 }
 func buildLegacyView(s Snapshot) View {
