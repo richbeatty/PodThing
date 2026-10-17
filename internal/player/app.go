@@ -592,6 +592,13 @@ func (a *App) activate(index int) error {
 }
 func (a *App) back() error {
 	s := a.Snapshot()
+	if s.TrayOpen {return a.Action(Action{Name:"tray-close"})}
+	if s.StorageMode {
+		if s.Screen=="home" {return nil}
+		if s.Screen=="library" && len(s.Path)==0 {
+			return a.Action(Action{Name:"home"})
+		}
+	}
 	if strings.HasPrefix(s.Screen, "settings-") {
 		a.mu.Lock()
 		a.s.Screen = "settings"
@@ -1085,6 +1092,17 @@ func (a *App) scroll(delta int) error {
 		delta = -delta
 	}
 	delta = max(-100, min(delta, 100))
+	if s.StorageMode && s.Screen=="library" && s.Category=="Albums" && s.GridView {
+		return a.run(func()error {
+			a.mu.Lock()
+			offset:=int64(a.s.Offset)+int64(delta)*4
+			offset=max(0,min(offset,max(0,int64(a.s.Total)-8)))
+			a.s.Offset=uint32(offset)
+			a.s.Focus=0
+			a.mu.Unlock()
+			return a.load()
+		})
+	}
 	count := len(s.Entries)
 	if s.Screen != "library" {
 		count = len(a.View().Rows)
