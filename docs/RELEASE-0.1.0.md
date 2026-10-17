@@ -1,3 +1,37 @@
+## 0.1.0-test.9: calmer player, native Classic artwork and safer eject
+
+After feedback from a physical Car Thing showing simulated playback but no cover
+art, the interface has been redesigned with a **neutral charcoal background**,
+soft off-white text, restrained accent, a single slim header and minimal
+transport controls. Now Playing no longer repeats the controls in both a large
+panel and a footer. Transport controls avoid the portion of the display covered
+by the Car Thing's physical dial. The four presets remain behind the swipe-down
+tray, and library, recents, sorting, playlists and simulation are retained.
+
+**Real iPod artwork:** iPod Classic commonly stores album covers in
+`iPod_Control/Artwork/ArtworkDB` with images in `.ithmb` files, not as
+embedded JPEGs. PodThing now includes libgpod and an isolated Python/ctypes
+worker that reads the authentic ArtworkDB **read-only**, extracts PNGs into
+the Car Thing's `/tmp`, and passes them to the bounded cover cache.
+Embedded FFmpeg extraction remains a fallback. When an album has no cover,
+the dark generic music placeholder remains. Not every ArtworkDB format
+can be guaranteed without a physical iPod test, and problems are logged.
+
+**Safe ejection:** PodThing can reattach a stale application mount record after
+a process restart only if Linux's mount table proves the exact
+`/run/podthing-ipod` filesystem is read-only and its backing block
+partition belongs to the connected iPod. Eject stops audio, waits for
+the artwork worker, closes its database, saves diagnostics and unmounts.
+A successful operation displays a dedicated **Safe to disconnect** screen.
+The Eject action isn't offered in the Quick Actions tray once the music
+volume is no longer open. A duplicate Eject after an already verified
+successful unmount is harmless.
+
+**What is not claimed:** These tests do not prove the artwork codec can decode
+the user's exact 7G artwork formats, or that the Car Thing hardware is
+physically tested. They *do* test the app/UI, safe eject state handling,
+and untrusted mount table validation. No iPod writes or repairs are added.
+
 ## 0.1.0-test.8: modern library and silent simulation
 
 **Playback defaults to Simulated** on existing and new settings until you
