@@ -111,7 +111,9 @@ func New(demo bool, stateDir string) (*App, error) {
 	if e := os.MkdirAll(stateDir, 0700); e != nil {
 		return nil, e
 	}
-	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect your iPod, then choose Connect", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}, AudioMode: "simulated"}}}
+	defaultAudio:="usb" // Real Car Thing playback route, not a silent demo.
+	if demo {defaultAudio="simulated"}
+	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect an iPod to open its read-only library", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}, AudioMode: defaultAudio}}}
 	b, e := os.ReadFile(filepath.Join(stateDir, "settings.json"))
 	if e == nil {
 		if e = json.Unmarshal(b, &a.s.Settings); e != nil {
@@ -143,6 +145,15 @@ func New(demo bool, stateDir string) (*App, error) {
 		a.s.Now = demoNow(0, false)
 	}
 	a.Scan()
+	// Only preselect a DAC when it is unambiguous; never mistake an iPod
+	// audio capture endpoint for an output. Persisted selections win.
+	if !demo && a.s.Settings.Output=="" && a.s.Settings.AudioMode=="usb" {
+		outputs:=[]string{}
+		for _,pcm:=range a.s.Audio {
+			if !pcm.Capture && pcm.USB && !pcm.IPod {outputs=append(outputs,pcm.ID)}
+		}
+		if len(outputs)==1 {a.s.Settings.Output=outputs[0]}
+	}
 	return a, nil
 }
 func (a *App) Log(s string) {
@@ -368,7 +379,10 @@ func (a *App) openStorage() error {
 	s:=a.Snapshot()
 	var ipods []hardware.Device
 	for _,d:=range s.USB {if d.IPod {ipods=append(ipods,d)}}
-	if len(ipods)!=1 {return fmt.Errorf("found %d iPods; connect exactly one stock iPod through the USB host hub",len(ipods))}
+	if len(ipods)!=1 {
+		if len(ipods)==0 {return fmt.Errorf("no iPod USB device detected; check the existing powered USB host hub and 30-pin data cable (Linux reports %d total USB device(s))",len(s.USB))}
+		return fmt.Errorf("found %d iPods; connect exactly one iPod through the powered USB hub",len(ipods))
+	}
 	a.Log("STAGE Storage: locking iPod disk read-only before mount")
 	vol,lib,err:=storage.OpenUSB(ipods[0].SysPath)
 	if err!=nil{return err}
