@@ -180,11 +180,16 @@ func (a *App) Scan() {
 	u, e := hardware.ScanUSB()
 	p := hardware.ScanAudio()
 	a.mu.Lock()
+	before := externalUSBInventory(a.s.USB)
 	a.s.USB = u
 	a.s.Audio = p
 	a.s.Inputs = hardware.InputNames()
 	a.s.HostRole = hardware.HostRole()
 	a.mu.Unlock()
+	after := externalUSBInventory(u)
+	if after != before {
+		a.Log("USB inventory changed: " + after)
+	}
 	if e != nil {
 		a.Log("USB scan: " + e.Error())
 	}
@@ -368,7 +373,7 @@ func (a *App) openStorage() error {
 	s:=a.Snapshot()
 	var ipods []hardware.Device
 	for _,d:=range s.USB {if d.IPod {ipods=append(ipods,d)}}
-	if len(ipods)!=1 {return fmt.Errorf("found %d iPods; connect exactly one stock iPod through the USB host hub",len(ipods))}
+	if err:=storageDiscoveryError(s.USB,s.HostRole);err!=nil{return err}
 	a.Log("STAGE Storage: locking iPod disk read-only before mount")
 	vol,lib,err:=storage.OpenUSB(ipods[0].SysPath)
 	if err!=nil{return err}
