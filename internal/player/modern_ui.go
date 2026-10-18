@@ -42,7 +42,7 @@ func BuildModernView(s Snapshot) View {
  // The screen's physical dial covers the far right edge; keep hits <= 716.
  if !s.TrayOpen {
   v.Hits=append(v.Hits,
-   Hit{16,5,150,61,Action{Name:"home"}},
+   Hit{16,5,150,61,Action{Name:func()string{if s.Screen=="settings"||strings.HasPrefix(s.Screen,"settings-"){return "back"};return "home"}()}},
    Hit{201,5,133,61,Action{Name:"navigate",Text:"Albums"}},
    Hit{408,5,138,61,Action{Name:"playing"}},
   )
@@ -153,12 +153,14 @@ func BuildModernView(s Snapshot) View {
  }
  // Keep the previous/next and play buttons reachable on other pages.
  if s.Screen!="playing" && !s.TrayOpen {
-  v.Hits=append(v.Hits,
-   Hit{12,420,57,60,Action{Name:"settings"}},
-   Hit{75,421,441,59,Action{Name:"playing"}},
-   Hit{526,420,57,60,Action{Name:"previous"}},
-   Hit{592,420,65,60,Action{Name:"play"}},
-   Hit{662,420,54,60,Action{Name:"next"}})
+  v.Hits=append(v.Hits,Hit{12,420,57,60,Action{Name:"settings"}})
+  if s.StorageMode || s.Demo {
+   v.Hits=append(v.Hits,
+    Hit{75,421,441,59,Action{Name:"playing"}},
+    Hit{526,420,57,60,Action{Name:"previous"}},
+    Hit{592,420,65,60,Action{Name:"play"}},
+    Hit{662,420,54,60,Action{Name:"next"}})
+  }
  }
  if s.TrayOpen {
   // Swipe-down panel is *only* the four configured presets.
@@ -206,7 +208,9 @@ func (p *Painter) renderModern(v View) *image.RGBA{
  fill(img,0,0,800,480,ink)
  // Never flood the entire interface with album accent or saturated blue.
  ac:=tastefulAccent(s)
- p.text(img,27,43,18,true,pale,"Home",132)
+ if s.Screen=="settings" || strings.HasPrefix(s.Screen,"settings-") {
+  p.text(img,27,43,18,true,pale,"← Back",132)
+ }else{p.text(img,27,43,18,true,pale,"Home",132)}
  p.text(img,208,43,17,false,soft,"Music",115)
  p.text(img,417,43,17,false,soft,"Now playing",139)
  if s.StorageMode {p.text(img,613,43,17,true,pale,"Eject",103)}
@@ -270,18 +274,20 @@ func (p *Painter) renderModern(v View) *image.RGBA{
   p.text(img,27,139,14,false,soft,v.Caption,540)
  }
  for _,tile:=range v.Tiles {p.minimalTile(img,tile,s)}
- if s.Screen!="playing" && s.Screen!="unmounted" && (s.StorageMode || s.Demo) {
+ if s.Screen!="playing" {
   fill(img,0,416,720,64,raised)
   p.glyph(img,25,432,"gear",soft)
   name:=s.Now.Title
-  if name==""{name="Choose a song"}
+  if name==""{name="Connect an iPod to play"}
   p.text(img,86,443,17,true,pale,name,416)
   p.text(img,86,463,12,false,soft,s.Now.Artist,420)
-  p.glyph(img,542,432,"previous",pale)
-  round(img,598,427,53,46,23,pale)
-  iconName:="play";if s.Now.Playing{iconName="pause"}
-  p.glyph(img,609,435,iconName,ink)
-  p.glyph(img,672,432,"next",pale)
+  if s.StorageMode || s.Demo {
+   p.glyph(img,542,432,"previous",pale)
+   round(img,598,427,53,46,23,pale)
+   iconName:="play";if s.Now.Playing{iconName="pause"}
+   p.glyph(img,609,435,iconName,ink)
+   p.glyph(img,672,432,"next",pale)
+  }
  }
  if s.TrayOpen {
   fill(img,0,0,723,245,raised)
