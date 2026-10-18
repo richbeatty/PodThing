@@ -415,8 +415,8 @@ func (a *App) ejectStorage() error {
 		for _,d:=range a.Snapshot().USB {
 			if !d.IPod {continue}
 			found++
-			vol,lib,err:=storage.RecoverUSB(d.SysPath)
-			if err==nil {a.volume=vol;a.library=lib;break}
+			vol,err:=storage.RecoverMount(d.SysPath)
+			if err==nil {a.volume=vol;break}
 			if !errors.Is(err,os.ErrNotExist) {return fmt.Errorf("cannot verify existing iPod mount: %w",err)}
 		}
 		if a.volume==nil {
@@ -424,14 +424,18 @@ func (a *App) ejectStorage() error {
 			a.mu.Lock()
 			a.s.Status="No iPod storage is mounted by PodThing"
 			a.mu.Unlock()
-			return fmt.Errorf("there is no mounted iPod to eject; use Open iPod music first (detected %d iPod devices)",found)
+			return fmt.Errorf("no PodThing read-only iPod mount found (detected %d iPod device(s)); nothing to unmount",found)
 		}
 	}
 	if err:=a.player.Stop();err!=nil{return err}
 	a.sim.Reset()
-	// Preserve the last storage session before the state is replaced by
-	// Safe to Disconnect, for recovery-mode diagnostics.
-	if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("preserve storage session before eject: %w",err)}
+	// Keep diagnostics best-effort: lack of space in the Car Thing state
+	// partition must not trap an otherwise safe read-only iPod mount.
+	if err:=a.saveSessionReport();err!=nil {a.Log("Could not preserve pre-eject report: "+err.Error())}
+	// Close the libgpod artwork worker BEFORE unmounting. It keeps
+	// ArtworkDB/iTunesDB descriptors open while the process is alive.
+	// artUse excludes new artwork readers until the mount is gone.
+	a.classicArt.Close()
 	if err:=a.volume.Eject();err!=nil{return err}
 	a.volume=nil
 	a.library=nil
@@ -445,7 +449,8 @@ func (a *App) ejectStorage() error {
 	a.s.Covers=nil
 	a.coverTried=nil
 	a.coverOrder=nil
-	a.classicArt.Close()
+	a.s.Artwork=nil
+	a.s.HasArtwork=false
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
