@@ -766,9 +766,14 @@ func (a *App) refresh() error {
 		a.mu.Lock()
 		a.s.Now.Position=position
 		a.s.Now.Playing=playing
-		if errText!="" {a.s.Error=errText}
+		newError:=errText!="" && a.s.Error!=errText
+		if errText!="" {
+			a.s.Error=errText
+			a.s.Status="Local audio decoder stopped; inspect error and saved diagnostics"
+		}
 		_ = track
 		a.mu.Unlock()
+		if newError {a.Log("AUDIO decoder: "+errText)}
 		return nil
 	}
 	if a.client == nil {
