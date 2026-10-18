@@ -1262,7 +1262,7 @@ func (a *App) Report() ([]byte, error) {
 	return json.MarshalIndent(struct {
 		Snapshot Snapshot          `json:"state"`
 		System   map[string]string `json:"system"`
-	}{a.Snapshot(), map[string]string{"alsaloop": hardware.CommandVersion("alsaloop"), "gst-launch-1.0": hardware.CommandVersion("gst-launch-1.0"), "speaker-test": hardware.CommandVersion("speaker-test")}}, "", "  ")
+	}{a.Snapshot(), map[string]string{"alsaloop": hardware.CommandVersion("alsaloop"), "gst-launch-1.0": hardware.CommandVersion("gst-launch-1.0"), "speaker-test": hardware.CommandVersion("speaker-test"), "ffmpeg": decoderVersion()}}, "", "  ")
 }
 
 var demoSongs = []string{"Dreams", "Everywhere", "Go Your Own Way", "The Chain", "Something", "Here Comes the Sun", "Come Together", "Golden Slumbers", "Digital Love", "One More Time", "Something About Us", "Voyager", "Everything In Its Right Place", "Kid A", "Idioteque", "Motion Picture Soundtrack"}
