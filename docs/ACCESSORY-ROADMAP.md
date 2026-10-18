@@ -1,5 +1,15 @@
 # Accessory-first iAP1, Display Remote and Digital Audio roadmap
 
+## Non-negotiable hardware constraint (owner clarification, 2026-10-18)
+
+**Use stock, existing equipment only:** Spotify Car Thing hardware, the stock-firmware iPod Classic 7G, and its normal USB-to-30-pin data cable via the existing powered USB host connection, if required. No 30-pin serial breakout, 3.3 V USB-UART adapter, custom accessory wiring, Apple auth chip, donor dock, or iPod firmware replacement. This **supersedes the serial hardware proof-of-concept recommendations elsewhere in earlier research below**. The separate serial implementation PR #13 was closed without merge.
+
+**Implement USB iPod USB Interface (iUI), not storage mounting:** iAP1 HID transport through the real advertised Apple device USB configuration, then non-destructive identification, Simple Remote and permitted non-authenticated commands. Seek metadata/browsing/digital audio only where genuine stock-device responses demonstrate support. Keep read-only mass storage as a clearly labeled experimental fallback, not the primary connection workflow.
+
+**Feasibility caveat:** Apple says full MFi function access requires an Apple-issued certificate/signature and authentication IC. Without modifying or adding hardware, do **not** promise MFi authentication or gated digital audio will be possible; this is a hard capability constraint until demonstrated otherwise with credible evidence. Software can improve the USB/iAP1 transport and test any unauthenticated subset, not create a valid private-key signature from nothing.
+
+Practical first blocker: owner's test.9 report listed only Linux host-controller root hubs and **no downstream hub or iPod enumeration**. Solve the USB data/role/power diagnosis with existing hardware before retrying iUI or authentication.
+
 Status: architectural decision and research plan, NOT a functioning MFi implementation.
 Recorded: 2026-10-18
 Base: `podthing-release-0.1.0-test`
@@ -75,7 +85,7 @@ Do not present analog audio as "Digital Audio working." This path may help valid
 - This evidence **does not establish** that the Smart Dock performs authenticated Display Remote (`0x03`) requests, USB HID iAP, true digital audio (`0x0A`), or MFi certificate signing. Its advertised Bluetooth audio and 3.5mm line-out may be analog-audio paths. Request a vendor schematic/protocol explanation or validate non-destructively on hardware before asserting how it works.
 - The 30-pin serial/UART + analog line-output architecture is worth an explicit prototype because it can provide genuine iPod-owned playback without mounting files or requiring USB digital capture. But it is **not** equivalent to authenticated USB digital audio, and it may require dedicated connector hardware not present in a standard USB-to-30-pin lead.
 
-**Decision impact:** Run *two* small proof-of-concept workstreams, not an all-or-nothing USB rewrite:
+**Historical research only, superseded by the owner's stock-hardware-only constraint:** The following two possible workstreams were previously investigated. Do not pursue the serial-hardware route without a new explicit user request:
 
 1. **Serial accessory feasibility:** Validate a proper, electrically safe 30-pin serial/UART adapter and Simple Remote on the stock Classic with no filesystem mount. Then test Extended Interface browsing only where the actual device accepts it. Check whether authentication is requested; never claim MFi functionality from a screen of metadata alone.
 2. **USB iUI + authorization feasibility:** Verify physical downstream USB enumeration and actual HID/iUI descriptors, then implement a real authorized MFi provider before gated Display Remote or USB Digital Audio tests. Only call the audio path complete when a PCM stream originates from the playing iPod and is audible at output.
