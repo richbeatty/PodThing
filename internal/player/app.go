@@ -766,9 +766,14 @@ func (a *App) refresh() error {
 		a.mu.Lock()
 		a.s.Now.Position=position
 		a.s.Now.Playing=playing
-		if errText!="" {a.s.Error=errText}
+		newError:=errText!="" && a.s.Error!=errText
+		if errText!="" {
+			a.s.Error=errText
+			a.s.Status="Local audio decoder stopped; inspect error and saved diagnostics"
+		}
 		_ = track
 		a.mu.Unlock()
+		if newError {a.Log("AUDIO decoder: "+errText)}
 		return nil
 	}
 	if a.client == nil {
@@ -1257,7 +1262,7 @@ func (a *App) Report() ([]byte, error) {
 	return json.MarshalIndent(struct {
 		Snapshot Snapshot          `json:"state"`
 		System   map[string]string `json:"system"`
-	}{a.Snapshot(), map[string]string{"alsaloop": hardware.CommandVersion("alsaloop"), "gst-launch-1.0": hardware.CommandVersion("gst-launch-1.0"), "speaker-test": hardware.CommandVersion("speaker-test")}}, "", "  ")
+	}{a.Snapshot(), map[string]string{"alsaloop": hardware.CommandVersion("alsaloop"), "gst-launch-1.0": hardware.CommandVersion("gst-launch-1.0"), "speaker-test": hardware.CommandVersion("speaker-test"), "ffmpeg": decoderVersion()}}, "", "  ")
 }
 
 var demoSongs = []string{"Dreams", "Everywhere", "Go Your Own Way", "The Chain", "Something", "Here Comes the Sun", "Come Together", "Golden Slumbers", "Digital Love", "One More Time", "Something About Us", "Voyager", "Everything In Its Right Place", "Kid A", "Idioteque", "Motion Picture Soundtrack"}

@@ -93,3 +93,5 @@ jobs:
             build/direct/boot-smoke-result.log
             build/direct/qemu-boot.log
             build/direct/arm64-smoke.log
+            build/direct/ffmpeg-runtime.txt
+            build/direct/ffmpeg-devices.txt

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -23,11 +24,49 @@ type Playback struct {
 	paused bool
 	ended bool
 	errorText string
+	decoderChecked bool
 }
+// decoderFailure preserves the dynamic-linker's original stderr. Exit 127
+// commonly means a missing shared library/ELF loader, not an iPod file error.
+func decoderFailure(err error, output string) error {
+	detail:=strings.TrimSpace(output)
+	if len(detail)>1500 {detail=detail[len(detail)-1500:]}
+	var exit *exec.ExitError
+	if errors.As(err,&exit) && exit.ExitCode()==127 {
+		if detail=="" {detail="the decoder exited before reporting a reason; inspect the FFmpeg runtime check in the firmware build log"}
+		return fmt.Errorf("FFmpeg runtime failed (exit 127, likely a missing runtime library or loader): %s",detail)
+	}
+	if detail!="" {return fmt.Errorf("decoder: %w: %s",err,detail)}
+	return fmt.Errorf("decoder: %w",err)
+}
+
+// FFmpeg is shipped dynamically linked inside the appliance. Check its
+// dependencies *on the device* before claiming the track started. Only the
+// first successful check is cached; a failed preflight can be retried.
+func (p *Playback) checkDecoder() error {
+	p.mu.Lock()
+	ready:=p.decoderChecked
+	p.mu.Unlock()
+	if ready {return nil}
+	ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second)
+	defer cancel()
+	cmd:=exec.CommandContext(ctx,"/usr/bin/ffmpeg","-hide_banner","-version")
+	out,e:=cmd.CombinedOutput()
+	if e!=nil {
+		if ctx.Err()!=nil {return fmt.Errorf("FFmpeg decoder check timed out: %w",ctx.Err())}
+		return fmt.Errorf("FFmpeg cannot run on this firmware: %w",decoderFailure(e,string(out)))
+	}
+	p.mu.Lock()
+	p.decoderChecked=true
+	p.mu.Unlock()
+	return nil
+}
+
 func (p *Playback) Start(file string, track Track, output string, offsetMS uint32) error {
 	if output=="" {return errors.New("choose a USB DAC output under Audio settings before playback")}
 	if _,e:=os.Stat(file);e!=nil{return e}
 	if e:=p.Stop();e!=nil{return e}
+	if e:=p.checkDecoder();e!=nil{return e}
 	// Decoder reads its input file and sends PCM to the selected ALSA
 	// playback device. No iPod USB audio or MFi session is involved.
 	args:=[]string{"-nostdin","-hide_banner","-loglevel","error"}
@@ -55,7 +94,7 @@ func (p *Playback) Start(file string, track Track, output string, offsetMS uint3
 	p.mu.Unlock()
 	go func() {
 		e:=cmd.Wait()
-		if e!=nil {e=fmt.Errorf("decoder: %w: %s",e,stderr.String())}
+		if e!=nil {e=decoderFailure(e,stderr.String())}
 		p.mu.Lock()
 		if p.cmd==cmd {
 			if !p.paused {p.elapsed+=time.Since(p.start)}
