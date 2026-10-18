@@ -149,6 +149,8 @@ Treat a full flash-modified iPod library as irreplaceable unless the owner confi
 
 Owners have already seen `no mounted iPod to eject` despite prior library access. The recovery logic added in test.9 attempts to address that. **Physical regression testing is still required.**
 
+**Source-review caveat (2026-10-18):** In `internal/player/app.go`, `ejectStorage` waits on `artUse` but calls `a.volume.Eject()` before `a.classicArt.Close()`. This is not the same as the intended sequence above. Confirm whether the libgpod worker can keep mounted artwork files open; if so, close it before the unmount and add a regression test. Do not claim this ordering has been fixed merely because test.9 recovery was merged.
+
 ## 6. Application behavior and design direction
 
 User-facing behavior currently implemented in source:
