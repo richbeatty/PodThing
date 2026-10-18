@@ -21,6 +21,7 @@ type Volume struct {
 	Disk string
 	Root string
 	FSType string
+	USBPath string // exact enumerated iPod USB device used to mount this partition
 	mounted bool
 }
 func diskForUSB(sysPath string) ([]string,error) {
@@ -92,7 +93,10 @@ func RecoverMount(sysPath string) (*Volume,error) {
 	if e!=nil{return nil,e}
 	raw,e:=os.ReadFile("/proc/self/mountinfo")
 	if e!=nil{return nil,e}
-	return InspectManagedMount(raw,parts)
+	vol,e:=InspectManagedMount(raw,parts)
+	if e!=nil{return nil,e}
+	vol.USBPath=sysPath
+	return vol,nil
 }
 // RecoverUSB attaches to an existing, verified iPod mount after an app
 // restart, then re-reads iTunesDB without modifying anything on the disk.
@@ -127,7 +131,7 @@ func OpenUSB(sysPath string) (*Volume,*Library,error) {
 		for _,fstype:=range []string{"vfat","hfsplus"} {
 			flags:=uintptr(syscall.MS_RDONLY|syscall.MS_NODEV|syscall.MS_NOSUID|syscall.MS_NOEXEC|syscall.MS_NOATIME)
 			if e=syscall.Mount(part,mountPoint,fstype,flags,"");e!=nil {continue}
-			vol:=&Volume{Device:part,Disk:disk,Root:mountPoint,FSType:fstype,mounted:true}
+			vol:=&Volume{Device:part,Disk:disk,Root:mountPoint,FSType:fstype,USBPath:sysPath,mounted:true}
 			db,readErr:=Read(mountPoint)
 			if readErr==nil {
 				return vol,db,nil
@@ -148,6 +152,39 @@ func (v *Volume) Eject() error {
 	v.mounted=false
 	return nil
 }
+// ReleaseUSBConnection logically disconnects the *verified iPod* from
+// Linux after a successful, normal unmount. Linux's device authorization
+// control affects only this one USB device, not the host controller or hub.
+// It cannot cut VBUS power and does not guarantee what the iPod LCD shows.
+// If authorization is unavailable or verification fails, the unmount is
+// still safe, but caller must report USB detachment as unconfirmed.
+func (v *Volume) ReleaseUSBConnection() error {
+	if v==nil || v.USBPath=="" {return errors.New("iPod USB identity missing; storage is unmounted but USB detach was not attempted")}
+	if v.Mounted() {return errors.New("refusing USB detach while iPod storage is mounted")}
+	parts,e:=diskForUSB(v.USBPath)
+	if os.IsNotExist(e) {return nil} // physically unplugged after unmount
+	if e!=nil {return fmt.Errorf("verify iPod USB identity before detach: %w",e)}
+	found:=false
+	for _,part:=range parts {
+		if filepath.Join("/dev",part)==v.Device {found=true;break}
+	}
+	if !found {return errors.New("iPod USB partition identity changed; refusing to detach another device")}
+	if strings.TrimSpace(readUSBVendor(v.USBPath))!="05ac" {
+		return errors.New("verified mount no longer belongs to an Apple USB device; USB detach refused")
+	}
+	target:=filepath.Join(v.USBPath,"authorized")
+	if e:=os.WriteFile(target,[]byte("0"),0200);e!=nil {
+		return fmt.Errorf("read-only iPod safely unmounted but USB logical disconnect failed: %w",e)
+	}
+	return nil
+}
+
+func readUSBVendor(path string) string {
+	data,e:=os.ReadFile(filepath.Join(path,"idVendor"))
+	if e!=nil{return ""}
+	return string(data)
+}
+
 func (v *Volume) Mounted() bool {return v!=nil&&v.mounted}
 func (v *Volume) Status() string {
 	if !v.Mounted(){return "Ejected"}
