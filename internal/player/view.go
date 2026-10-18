@@ -241,7 +241,10 @@ func (p *Painter) glyph(img *image.RGBA,x,y int,name string,c color.RGBA) {
 func (p *Painter) Render(v View) *image.RGBA {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if v.State.StorageMode {return p.renderModern(v)}
+	return p.renderModern(v)
+	// Previous renderer retained below only as migration reference; the
+	// compiled app always paints the unified interface.
+	/*
 	st:=v.State
 	img:=image.NewRGBA(image.Rect(0,0,800,480))
 	ac:=themeAccent(st)
