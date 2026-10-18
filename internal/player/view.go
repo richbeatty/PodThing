@@ -67,7 +67,7 @@ func buildLegacyView(s Snapshot) View {
 			{"Enable USB host","Use the existing USB hub/data cable",Action{Name:"usb-host"}},
 			{"Save diagnostic report","Stored on device for review",Action{Name:"export"}},
 			{"Disconnect iPod","Release active accessory session",Action{Name:"disconnect"}},
-			{"Open music as disk (experimental)","Read-only fallback; not the desired dock mode",Action{Name:"storage-open"}},
+			{"Open music as disk (experimental)","Experimental read-only fallback; not native iPod playback",Action{Name:"storage-open"}},
 			{"Eject experimental disk mode","Only if PodThing mounted the iPod",Action{Name:"storage-eject"}},
 			{"Computer recovery","USB diagnostic download",Action{Name:"usb-recovery"}},
 		}
