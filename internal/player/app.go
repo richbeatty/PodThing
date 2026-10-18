@@ -145,6 +145,7 @@ func New(demo bool, stateDir string) (*App, error) {
 		a.s.Now = demoNow(0, false)
 	}
 	a.Scan()
+	if !demo {a.recoverMountedStorage()}
 	// Only preselect a DAC when it is unambiguous; never mistake an iPod
 	// audio capture endpoint for an output. Persisted selections win.
 	if !demo && a.s.Settings.Output=="" && a.s.Settings.AudioMode=="usb" {
@@ -155,6 +156,45 @@ func New(demo bool, stateDir string) (*App, error) {
 		if len(outputs)==1 {a.s.Settings.Output=outputs[0]}
 	}
 	return a, nil
+}
+// A crash/restart can leave the already read-only PodThing mount behind.
+// Reattach only to the exact iPod partition recorded in Linux mountinfo,
+// then restore browsing or make safe eject available if database parsing fails.
+func (a *App) recoverMountedStorage() {
+	for _,d:=range a.Snapshot().USB {
+		if !d.IPod {continue}
+		vol,err:=storage.RecoverMount(d.SysPath)
+		if errors.Is(err,os.ErrNotExist){continue}
+		if err!=nil {
+			a.Log("Mounted iPod recovery check: "+err.Error())
+			continue
+		}
+		a.volume=vol
+		a.s.StorageMode=true
+		a.s.SafeToDisconnect=false
+		a.s.Screen="home"
+		a.s.Name="iPod Music (read-only)"
+		a.s.Status="Recovered existing read-only iPod mount"
+		lib,err:=storage.Read(vol.Root)
+		if err!=nil {
+			a.s.Connected=false
+			a.s.Error="Library unavailable: "+err.Error()+"; Eject remains available"
+			a.Log("Recovered a read-only mount with unreadable library; Eject is available")
+			return
+		}
+		a.library=lib
+		a.s.Connected=true
+		a.s.Covers=map[string]image.Image{}
+		a.coverTried=map[string]bool{}
+		a.s.Status=fmt.Sprintf("Recovered read-only music library: %d tracks",len(lib.Tracks))
+		a.rebuildHomeAlbums()
+		if err:=a.load();err!=nil {a.Log("Recovered library browse error: "+err.Error())}
+		cards:=a.Snapshot().HomeAlbums
+		if len(cards)>4 {cards=cards[:4]}
+		a.requestCovers(cards)
+		a.Log("Recovered existing read-only iPod library and safe eject")
+		return
+	}
 }
 func (a *App) Log(s string) {
 	a.mu.Lock()
