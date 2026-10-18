@@ -84,14 +84,20 @@ func InspectManagedMount(mountinfo []byte, partitions []string) (*Volume,error) 
 	}
 	return nil,os.ErrNotExist
 }
+// RecoverMount verifies that a stale PodThing mount belongs to this exact
+// enumerated iPod and is read-only. Safe eject does NOT require parsing the
+// library database, which may be corrupt or unavailable after an app restart.
+func RecoverMount(sysPath string) (*Volume,error) {
+	parts,e:=diskForUSB(sysPath)
+	if e!=nil{return nil,e}
+	raw,e:=os.ReadFile("/proc/self/mountinfo")
+	if e!=nil{return nil,e}
+	return InspectManagedMount(raw,parts)
+}
 // RecoverUSB attaches to an existing, verified iPod mount after an app
 // restart, then re-reads iTunesDB without modifying anything on the disk.
 func RecoverUSB(sysPath string) (*Volume,*Library,error) {
-	parts,e:=diskForUSB(sysPath)
-	if e!=nil{return nil,nil,e}
-	raw,e:=os.ReadFile("/proc/self/mountinfo")
-	if e!=nil{return nil,nil,e}
-	vol,e:=InspectManagedMount(raw,parts)
+	vol,e:=RecoverMount(sysPath)
 	if e!=nil{return nil,nil,e}
 	lib,e:=Read(mountPoint)
 	if e!=nil{return nil,nil,fmt.Errorf("read recovered iPod library: %w",e)}
