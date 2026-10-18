@@ -98,6 +98,7 @@ type App struct {
 	artUse sync.RWMutex
 	artFetch sync.Mutex
 	coverTried map[string]bool
+	coverRetryAt map[string]time.Time
 	coverOrder []string
 	classicArt classicArtwork
 	artworkWarned bool
@@ -446,6 +447,7 @@ func (a *App) openStorage() error {
 	a.s.TrayOpen=false
 	a.s.Covers=make(map[string]image.Image)
 	a.coverTried=make(map[string]bool)
+	a.coverRetryAt=make(map[string]time.Time)
 	a.coverOrder=nil
 	a.artworkWarned=false
 	a.classicArt.Close()
@@ -512,6 +514,7 @@ func (a *App) ejectStorage() error {
 	a.s.HomeAlbums=nil
 	a.s.Covers=nil
 	a.coverTried=nil
+	a.coverRetryAt=nil
 	a.coverOrder=nil
 	a.s.Artwork=nil
 	a.s.HasArtwork=false
