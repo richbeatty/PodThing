@@ -55,26 +55,11 @@ func (a *App) fetchCover(card MusicCard) {
 		// other files from this album. Previous code exited after just one
 		// alternate even when that file had no artwork.
 		source="embedded picture"
-		tryEmbedded:=func(candidateID uint32)(image.Image,bool) {
-			for _,candidate:=range a.library.Tracks {
-				if candidate.ID!=candidateID {continue}
-				path,e:=a.library.ResolveFile(candidate)
-				if e!=nil {return nil,false}
-				decoded,_:=decodeEmbeddedCover(path)
-				return decoded,true
-			}
-			return nil,false
-		}
-		img,_=tryEmbedded(t.ID)
-		if img==nil {
-			attempts:=0
-			for _,candidate:=range a.library.Tracks {
-				if candidate.ID==t.ID || candidate.Artist!=t.Artist || candidate.Album!=t.Album {continue}
-				path,e:=a.library.ResolveFile(candidate)
-				if e==nil {img,_=decodeEmbeddedCover(path)}
-				attempts++
-				if img!=nil || attempts>=4 {break}
-			}
+		for _,candidate:=range coverCandidates(a.library.Tracks,t,5) {
+			path,e:=a.library.ResolveFile(candidate)
+			if e!=nil {continue}
+			img,_=decodeEmbeddedCover(path)
+			if img!=nil {break}
 		}
 	}
 	if img==nil {
