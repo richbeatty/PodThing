@@ -16,6 +16,14 @@ User-reported blockers that initiated this cleanup: multiple unrelated interface
 
 See [Read-only player cleanup](PLAYER-CLEANUP.md) for implementation details, known physical limitations and test procedure.
 
+## Confirmed October 18 field findings and post-unmount USB fix
+
+The owner's **blue Safe to disconnect screenshot is an old UI build**, not the consistently charcoal `test.14` code. Confirm the actual device's `version` via About / `GET /api/state` rather than assuming the newest GitHub ZIP is installed. New builds display a firmware version on the dark Safe to disconnect screen.
+
+The old `Volume.Eject()` only unmounted the Linux filesystem. This protects the data but does **not** eject the iPod at USB level; leaving its connected screen lit is consistent with that code. The updated flow verifies normal unmount and then, **only for the same Apple USB device whose partition was mounted**, uses Linux's per-device `authorized=0` interface to request a logical USB release. No USB host controller, hub, unrelated device, or still-mounted disk may be detached. A result that fails the USB step is reported separately from the already-successful filesystem unmount. Logical disconnect does not remove 5V power and must be tested on a real Classic.
+
+Album covers cannot be diagnosed exactly from the post-eject screenshot alone. Independently identified code defects: permanent `coverTried` failures, only one alternate embedded art file attempted, transient artwork worker errors never retried and all libgpod failures reduced to `NONE`. The patch adds five-track fallback, 30-second retry/backoff, a 30-second initial libgpod parse deadline, categorized reasons and a first-cover source log. If hardware still displays blank covers, capture a **current build** report with `ARTWORK:` entries to identify the true failing stage. Background history and exact reproduction steps: [Eject / artwork diagnosis](EJECT-ARTWORK-DIAGNOSIS.md).
+
 ## Why this file exists
 
 This is the project handoff and continuity document. Read it before changing PodThing, especially when resuming work in a new chat or with a new maintainer. It records the actual implementation, the reasons for architectural changes, owner decisions and hardware observations, the build/release path, and work that has not yet been verified.

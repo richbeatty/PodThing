@@ -26,26 +26,38 @@ type classicArtwork struct {
  reader *bufio.Reader
  tried bool
  readErr error
+ failedAt time.Time
 }
 func (c *classicArtwork) prepare(root string) error {
- if c.tried {return c.readErr}
+ if c.tried {
+  // A bad/missing ArtworkDB should not be retried for every track, but
+  // a temporary worker startup failure must not disable covers forever.
+  if c.readErr==nil {return nil}
+  if time.Since(c.failedAt)<20*time.Second {return c.readErr}
+  c.closeLocked()
+  c.tried=false
+  c.readErr=nil
+ }
  c.tried=true
  c.root=root
  cmd:=exec.Command("/usr/bin/python3","/usr/lib/podthing/artwork.py",root)
  stdin,e:=cmd.StdinPipe()
- if e!=nil{c.readErr=e;return e}
+ if e!=nil{c.readErr=e;c.failedAt=time.Now();return e}
  stdout,e:=cmd.StdoutPipe()
- if e!=nil{c.readErr=e;return e}
+ if e!=nil{c.readErr=e;c.failedAt=time.Now();return e}
  // stdout is a single protocol line; stderr goes to the boot journal.
- if e=cmd.Start();e!=nil{c.readErr=e;return e}
+ if e=cmd.Start();e!=nil{c.readErr=e;c.failedAt=time.Now();return e}
  c.cmd=cmd
  c.stdin=stdin
  c.reader=bufio.NewReaderSize(stdout,4096)
- line,e:=c.readLine(10*time.Second)
- if e!=nil {c.closeLocked();c.readErr=e;return e}
+ // Large modified iPod Classics may take significantly longer to
+ // parse their 100k+ track database. The worker is asynchronous to the UI.
+ line,e:=c.readLine(30*time.Second)
+ if e!=nil {c.closeLocked();c.readErr=e;c.failedAt=time.Now();return e}
  if line!="READY" {
   c.closeLocked()
   c.readErr=fmt.Errorf("libgpod: %s",line)
+  c.failedAt=time.Now()
   return c.readErr
  }
  return nil
@@ -66,11 +78,16 @@ func (c *classicArtwork) Cover(root string,id uint32)(image.Image,error){
  if c.root!=root {return nil,errors.New("artwork worker attached to different iPod")}
  if _,e:=fmt.Fprintf(c.stdin,"%d\n",id);e!=nil{c.closeLocked();c.readErr=e;return nil,e}
  line,e:=c.readLine(5*time.Second)
- if e!=nil{c.closeLocked();c.readErr=e;return nil,e}
- if line=="NONE"{return nil,errors.New("no indexed iPod artwork for this track")}
+ if e!=nil{c.closeLocked();c.readErr=e;c.failedAt=time.Now();return nil,e}
+ if strings.HasPrefix(line,"NONE") {
+  why:=strings.TrimSpace(strings.TrimPrefix(line,"NONE"))
+  if why=="" {why="track not found or missing iPod thumbnail"}
+  return nil,errors.New("no iPod thumbnail: "+why)
+ }
  if !strings.HasPrefix(line,"OK /tmp/podthing-art-") {
   c.closeLocked()
   c.readErr=fmt.Errorf("iPod artwork worker: %s",line)
+  c.failedAt=time.Now()
   return nil,c.readErr
  }
  path:=strings.TrimPrefix(line,"OK ")
@@ -113,4 +130,5 @@ func (c *classicArtwork) Close(){
  c.tried=false
  c.root=""
  c.readErr=nil
+ c.failedAt=time.Time{}
 }

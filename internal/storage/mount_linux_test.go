@@ -28,3 +28,26 @@ func TestInspectManagedMountRejectsUnrelatedOrWritableDisk(t *testing.T) {
  }
  if !strings.Contains(v.Status(),"read-only"){t.Fatal("did not preserve read-only status")}
 }
+
+func TestUSBEjectNeverDetachesUnverifiedOrMountedDevice(t *testing.T) {
+	if e:=(*Volume)(nil).ReleaseUSBConnection();e==nil {
+		t.Fatal("nil volume must not deauthorize USB")
+	}
+	if e:=(&Volume{USBPath:"/sys/bus/usb/devices/1-1",mounted:true}).ReleaseUSBConnection();e==nil {
+		t.Fatal("must not detach a mounted volume")
+	}
+	if e:=(&Volume{Device:"/dev/sdb1"}).ReleaseUSBConnection();e==nil {
+		t.Fatal("must not detach without the original iPod USB identity")
+	}
+	// A real-looking sysfs authorization file is NOT enough. The actual
+	// iPod USB disk/partition ancestry must still be proven by Linux.
+	root:=t.TempDir()
+	if e:=os.WriteFile(root+"/idVendor",[]byte("05ac\n"),0600);e!=nil{t.Fatal(e)}
+	if e:=os.WriteFile(root+"/authorized",[]byte("1\n"),0600);e!=nil{t.Fatal(e)}
+	v:=&Volume{Device:"/dev/not-an-ipod",USBPath:root,mounted:false}
+	if e:=v.ReleaseUSBConnection();e==nil{
+		t.Fatal("must refuse to detach an Apple-looking USB device without matching physical partition")
+	}
+	b,e:=os.ReadFile(root+"/authorized")
+	if e!=nil||string(b)!="1\n"{t.Fatalf("unsafe USB authorization mutation: %q %v",b,e)}
+}

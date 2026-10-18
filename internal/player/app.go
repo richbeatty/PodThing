@@ -98,6 +98,7 @@ type App struct {
 	artUse sync.RWMutex
 	artFetch sync.Mutex
 	coverTried map[string]bool
+	coverRetryAt map[string]time.Time
 	coverOrder []string
 	classicArt classicArtwork
 	artworkWarned bool
@@ -446,6 +447,7 @@ func (a *App) openStorage() error {
 	a.s.TrayOpen=false
 	a.s.Covers=make(map[string]image.Image)
 	a.coverTried=make(map[string]bool)
+	a.coverRetryAt=make(map[string]time.Time)
 	a.coverOrder=nil
 	a.artworkWarned=false
 	a.classicArt.Close()
@@ -490,7 +492,17 @@ func (a *App) ejectStorage() error {
 	// ArtworkDB/iTunesDB descriptors open while the process is alive.
 	// artUse excludes new artwork readers until the mount is gone.
 	a.classicArt.Close()
-	if err:=a.volume.Eject();err!=nil{return err}
+	vol:=a.volume
+	if err:=vol.Eject();err!=nil{return err}
+	// A clean unmount protects the iPod data, but the iPod stays logically
+	// attached over USB until the host releases the device. Only touch the
+	// USB device whose block partition backed this verified mount.
+	detachErr:=vol.ReleaseUSBConnection()
+	if detachErr!=nil {
+		a.Log("EJECT: filesystem safely unmounted; USB detach unconfirmed: "+detachErr.Error())
+	} else {
+		a.Log("EJECT: filesystem unmounted and iPod released from Linux USB device authorization")
+	}
 	a.volume=nil
 	a.library=nil
 	a.queue=nil
@@ -502,19 +514,21 @@ func (a *App) ejectStorage() error {
 	a.s.HomeAlbums=nil
 	a.s.Covers=nil
 	a.coverTried=nil
+	a.coverRetryAt=nil
 	a.coverOrder=nil
 	a.s.Artwork=nil
 	a.s.HasArtwork=false
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
-	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."
+	a.s.Status="iPod storage safely unmounted; Linux USB connection released"
+	if detachErr!=nil {a.s.Status="iPod storage safely unmounted; USB connection may remain active. Disconnect cable when ready."}
 	a.s.Now=iap.NowPlaying{}
 	a.s.Entries=nil
 	a.s.Total=0
 	a.s.Path=nil
 	a.s.Screen="unmounted"
 	a.mu.Unlock()
-	a.Log("STORAGE unmounted cleanly; safe for host to unplug")
+	a.Log("STORAGE unmounted cleanly; safe to unplug after normal unmount")
 	return nil
 }
 func (a *App) connect() error {

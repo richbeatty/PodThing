@@ -20,9 +20,10 @@ func (a *App) requestCovers(cards []MusicCard) {
 		a.mu.Lock()
 		if a.coverTried==nil {a.coverTried=map[string]bool{}}
 		tried:=a.coverTried[c.Key]
-		if !tried {a.coverTried[c.Key]=true}
+		cooldown:=!a.coverRetryAt[c.Key].IsZero() && time.Now().Before(a.coverRetryAt[c.Key])
+		if !tried && !cooldown {a.coverTried[c.Key]=true}
 		a.mu.Unlock()
-		if !tried {go a.fetchCover(c)}
+		if !tried && !cooldown {go a.fetchCover(c)}
 	}
 }
 func (a *App) fetchCover(card MusicCard) {
@@ -47,22 +48,28 @@ func (a *App) fetchCover(card MusicCard) {
 			if img!=nil||attempts>=3 {break}
 		}
 	}
+	source:="ArtworkDB"
 	if img==nil {
 		// ArtworkDB and embedded tags are independent data sources.
-		// Do not silently skip covers because an individual file is absent.
-		// Try the representative and a few neighboring album tracks.
-		for _,candidate:=range a.library.Tracks {
-			if candidate.ID!=t.ID && (candidate.Artist!=t.Artist || candidate.Album!=t.Album) {continue}
+		// Try the representative track *first*, followed by up to four
+		// other files from this album. Previous code exited after just one
+		// alternate even when that file had no artwork.
+		source="embedded picture"
+		for _,candidate:=range coverCandidates(a.library.Tracks,t,5) {
 			path,e:=a.library.ResolveFile(candidate)
-			if e==nil {img,_=decodeEmbeddedCover(path)}
+			if e!=nil {continue}
+			img,_=decodeEmbeddedCover(path)
 			if img!=nil {break}
-			if candidate.ID!=t.ID {break}
 		}
 	}
 	if img==nil {
 		a.mu.Lock()
 		first:=!a.artworkWarned
 		a.artworkWarned=true
+		delete(a.coverTried,card.Key)
+		if a.coverRetryAt==nil {a.coverRetryAt=make(map[string]time.Time)}
+		if len(a.coverRetryAt)>512 {a.coverRetryAt=make(map[string]time.Time)}
+		a.coverRetryAt[card.Key]=time.Now().Add(30*time.Second)
 		a.mu.Unlock()
 		if first {
 			reason:="No album image from ArtworkDB or embedded tags"
@@ -78,6 +85,7 @@ func (a *App) fetchCover(card MusicCard) {
 			a.coverOrder=append(a.coverOrder,card.Key)
 		}
 		a.s.Covers[card.Key]=img
+		delete(a.coverRetryAt,card.Key)
 		// Cap decoded artwork: 72 images * 160px is cheap on Car Thing.
 		// Evicted tiles may be fetched again when scrolled into view.
 		for len(a.coverOrder)>72 {
@@ -96,6 +104,11 @@ func (a *App) fetchCover(card MusicCard) {
 		}
 	}
 	a.mu.Unlock()
+	// Capture actual evidence of the artwork source in the host report.
+	// Limit chatter to the first few visible covers.
+	if len(a.Snapshot().Covers)<=4 {
+		a.Log("ARTWORK: decoded cover from "+source+" for "+t.Artist+" / "+t.Album)
+	}
 }
 func decodeEmbeddedCover(path string) (image.Image,error) {
 	ctx,cancel:=context.WithTimeout(context.Background(),2*time.Second)

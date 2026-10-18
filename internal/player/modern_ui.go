@@ -252,9 +252,14 @@ func (p *Painter) renderModern(v View) *image.RGBA{
    p.text(img,642,157,14,false,pale,label,65)
   }
  }else if s.Screen=="unmounted" {
-  p.text(img,30,150,37,true,pale,"Safe to disconnect",510)
-  p.text(img,30,194,17,false,soft,"The iPod storage was unmounted successfully.",650)
-  p.text(img,30,229,15,false,soft,"You can unplug the cable. No files were changed.",650)
+  p.text(img,30,150,37,true,pale,"Safe to disconnect",560)
+  p.text(img,30,194,17,false,soft,"The iPod's read-only filesystem is unmounted.",670)
+  usb:="Linux released the iPod's USB device. You may unplug it."
+  if strings.Contains(s.Status,"may remain active") {
+   usb="USB is still connected; unplugging is safe after unmount."
+  }
+  p.text(img,30,229,15,false,soft,usb,680)
+  p.text(img,30,387,13,false,soft,"Firmware "+s.Version,550)
  }else if s.Screen=="playing"{
   p.minimalCover(img,35,91,271,271,s.Artwork)
   p.text(img,345,120,12,false,soft,"NOW PLAYING",315)

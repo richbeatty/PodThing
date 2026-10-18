@@ -1,3 +1,12 @@
+## Read-only player follow-up: physical USB release and observable artwork (test candidate)
+
+- An owner photo shows **old blue UI after eject**, proving an older application image is running rather than the dark unified UI of test.14. Verify installed version after flashing; latest GitHub release does not guarantee current A/B boot slot.
+- Corrected Eject from **unmount only** to **unmount followed by verified, iPod-specific Linux USB logical deauthorization**. The app refuses to affect any hub/host/other device and never detaches before a successful normal unmount. If logical USB release fails, it says so while honestly retaining the safe-to-unplug mount status. Logical deauthorization is not physical power removal, and the Classic LCD must be checked.
+- Album art now tries up to five matching files when ArtworkDB lacks a usable thumbnail. Temporary decoder failures can be retried after a cooldown, and larger libraries have a longer asynchronous libgpod initialization window. Device diagnostics explicitly distinguish absent ArtworkDB, track ID mismatch, no thumbnail and decoder errors.
+- The charcoal Safe to disconnect screen displays its **Firmware 0.1.0-test.N** number to identify stale boots.
+- **Hardware verification still required:** artwork/USB detach cannot be declared fully working from Go/CI tests. If the cover still does not appear, export the `ARTWORK:` report after browsing an album. No iPod filesystem writes or forced unmount were added.
+
+
 ## Read-only player cleanup (current prerelease candidate)
 
 This release returns PodThing's current hardware test to a **read-only iPod Classic music player**, with media decoded on Car Thing and sent to a selected, real USB DAC/audio output. It does **not** add MFi, serial adapters or an accessory-mode handshake.
