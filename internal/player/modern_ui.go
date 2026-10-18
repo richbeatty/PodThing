@@ -37,19 +37,27 @@ func tastefulAccent(s Snapshot) color.RGBA {
  return warm
 }
 func BuildModernView(s Snapshot) View {
- v:=View{State:s,Title:"PodThing"}
- // Header and transport live inside the safe 0..700px touch region.
+ v:=View{State:s,Title:"Music"}
+ // Consistent navigation before connection, during playback and after eject.
+ // The screen's physical dial covers the far right edge; keep hits <= 716.
  if !s.TrayOpen {
   v.Hits=append(v.Hits,
-   Hit{16,5,157,61,Action{Name:"home"}},
-   Hit{390,5,124,61,Action{Name:"navigate",Text:"Albums"}},
-   Hit{516,5,104,61,Action{Name:"playing"}},
-   Hit{637,5,79,61,Action{Name:"tray"}},
+   Hit{16,5,150,61,Action{Name:"home"}},
+   Hit{201,5,133,61,Action{Name:"navigate",Text:"Albums"}},
+   Hit{408,5,138,61,Action{Name:"playing"}},
   )
+  if s.StorageMode {v.Hits=append(v.Hits,Hit{584,5,132,61,Action{Name:"storage-eject"}})}
  }
  switch s.Screen {
  case "home":
   v.Title="Home"
+  if !s.StorageMode && !s.Demo && !s.Connected {
+   v.Caption="Connect your iPod to browse music"
+   action:="storage-open"
+   if s.HostRole=="device" {action="usb-host"}
+   v.Tiles=append(v.Tiles,ModernTile{X:150,Y:224,W:411,H:76,Title:"Open iPod music (read-only)",Subtitle:"",Action:Action{Name:action}})
+   break
+  }
   if len(s.Recent)>0 {
    v.Caption="Recently played"
    for i,r:=range s.Recent {
@@ -72,6 +80,13 @@ func BuildModernView(s Snapshot) View {
   }
  case "library":
   v.Title=s.Category
+  if !s.StorageMode && !s.Demo && !s.Connected {
+   v.Caption="Your music lives on your iPod"
+   action:="storage-open"
+   if s.HostRole=="device" {action="usb-host"}
+   v.Tiles=append(v.Tiles,ModernTile{X:150,Y:224,W:411,H:76,Title:"Open iPod music (read-only)",Action:Action{Name:action}})
+   break
+  }
   v.Caption=fmt.Sprintf("%d %s",s.Total,strings.ToLower(s.Category))
   for i,c:=range Categories{
    v.Hits=append(v.Hits,Hit{26+i*174,84,161,47,Action{Name:"navigate",Text:c}})
@@ -99,7 +114,7 @@ func BuildModernView(s Snapshot) View {
   }
  case "unmounted":
   v.Title="Safe to disconnect"
-  v.Tiles=append(v.Tiles,ModernTile{X:30,Y:285,W:380,H:58,Title:"Reconnect iPod library",Action:Action{Name:"storage-open"}})
+  v.Tiles=append(v.Tiles,ModernTile{X:30,Y:282,W:460,H:65,Title:"Open library after reconnecting",Action:Action{Name:"storage-open"}})
  case "playing":
   v.Title="Now playing"
   if s.Now.Duration>0{
@@ -146,13 +161,10 @@ func BuildModernView(s Snapshot) View {
    Hit{662,420,54,60,Action{Name:"next"}})
  }
  if s.TrayOpen {
-  // A modal, four-key tray. Always safe to dismiss; eject only when
-  // the storage session is actually mounted.
-  v.Hits=[]Hit{{0,280,800,200,Action{Name:"tray-close"}},{636,0,80,62,Action{Name:"tray-close"}}}
-  for i:=0;i<4;i++ {v.Hits=append(v.Hits,Hit{25+i*174,100,160,69,Action{Name:fmt.Sprintf("preset%d",i+1)}})}
-  v.Hits=append(v.Hits,Hit{25,199,154,52,Action{Name:"shuffle"}},Hit{196,199,154,52,Action{Name:"repeat"}})
-  if s.StorageMode {v.Hits=append(v.Hits,Hit{365,199,167,52,Action{Name:"storage-eject"}})}
-  v.Hits=append(v.Hits,Hit{550,199,150,52,Action{Name:"settings"}})
+  // Swipe-down panel is *only* the four configured presets.
+  // Eject and settings have permanent dedicated locations.
+  v.Hits=[]Hit{{0,245,720,235,Action{Name:"tray-close"}},{636,0,80,62,Action{Name:"tray-close"}}}
+  for i:=0;i<4;i++ {v.Hits=append(v.Hits,Hit{25+i*174,104,160,79,Action{Name:fmt.Sprintf("preset%d",i+1)}})}
  }
  return v
 }
@@ -194,15 +206,24 @@ func (p *Painter) renderModern(v View) *image.RGBA{
  fill(img,0,0,800,480,ink)
  // Never flood the entire interface with album accent or saturated blue.
  ac:=tastefulAccent(s)
- p.text(img,27,44,21,true,pale,"PodThing",174)
- p.text(img,398,43,15,false,soft,"Library",100)
- p.text(img,530,43,15,false,soft,"Playing",100)
- p.text(img,647,43,14,false,pale,"More",53)
+ p.text(img,27,43,18,true,pale,"Home",132)
+ p.text(img,208,43,17,false,soft,"Music",115)
+ p.text(img,417,43,17,false,soft,"Now playing",139)
+ if s.StorageMode {p.text(img,613,43,17,true,pale,"Eject",103)}
+
  fill(img,26,67,675,1,hair)
  if s.Screen=="home" {
-  p.text(img,27,113,29,true,pale,"Your music",450)
-  p.text(img,27,137,14,false,soft,v.Caption,500)
-  p.text(img,27,342,12,false,soft,"BROWSE",270)
+  if !s.StorageMode && !s.Demo && !s.Connected {
+   p.text(img,49,161,31,true,pale,"Plug in your iPod",620)
+   p.text(img,49,201,16,false,soft,"Read-only library. Music plays from the Car Thing.",670)
+  }else{
+   p.text(img,27,113,29,true,pale,"Your music",450)
+   p.text(img,27,137,14,false,soft,v.Caption,500)
+   p.text(img,27,342,12,false,soft,"BROWSE",270)
+  }
+ }else if s.Screen=="library" && !s.StorageMode && !s.Demo && !s.Connected {
+  p.text(img,49,161,31,true,pale,"Connect your iPod",630)
+  p.text(img,49,201,16,false,soft,"Your library remains read-only.",630)
  }else if s.Screen=="library"{
   for i,c:=range Categories{
    x:=26+i*174
@@ -249,7 +270,7 @@ func (p *Painter) renderModern(v View) *image.RGBA{
   p.text(img,27,139,14,false,soft,v.Caption,540)
  }
  for _,tile:=range v.Tiles {p.minimalTile(img,tile,s)}
- if s.Screen!="playing" && s.Screen!="unmounted" {
+ if s.Screen!="playing" && s.Screen!="unmounted" && (s.StorageMode || s.Demo) {
   fill(img,0,416,720,64,raised)
   p.glyph(img,25,432,"gear",soft)
   name:=s.Now.Title
@@ -263,22 +284,17 @@ func (p *Painter) renderModern(v View) *image.RGBA{
   p.glyph(img,672,432,"next",pale)
  }
  if s.TrayOpen {
-  fill(img,0,0,723,277,raised)
-  p.text(img,27,41,23,true,pale,"Quick actions",450)
+  fill(img,0,0,723,245,raised)
+  p.text(img,27,45,23,true,pale,"Presets",450)
   p.text(img,650,42,19,false,soft,"×",40)
   for i,bind:=range s.Settings.Buttons{
    x:=25+i*174
-   round(img,x,99,160,71,11,ink)
-   p.text(img,x+14,120,12,false,soft,fmt.Sprintf("PRESET %d",i+1),133)
-   p.text(img,x+14,149,16,true,pale,bind,135)
+   round(img,x,103,160,80,11,ink)
+   p.text(img,x+14,128,12,false,soft,fmt.Sprintf("PRESET %d",i+1),133)
+   p.text(img,x+14,157,16,true,pale,bind,135)
   }
-  for i,label:=range []string{"Shuffle","Repeat"}{
-   x:=25+i*171
-   p.text(img,x+8,231,17,false,pale,label,132)
-  }
-  if s.StorageMode{p.text(img,374,231,17,false,pale,"Eject iPod",146)}
-  p.text(img,562,231,17,false,pale,"Settings",134)
-  fill(img,0,276,720,1,hair)
+  p.text(img,27,221,14,false,soft,"Swipe up to close",400)
+  fill(img,0,244,720,1,hair)
  }
  if s.Error!=""{
   round(img,21,370,684,40,8,color.RGBA{83,40,42,255})
