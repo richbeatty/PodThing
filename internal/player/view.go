@@ -58,18 +58,18 @@ func buildLegacyView(s Snapshot) View {
 			{"Back to music","",Action{Name:"back"}},
 		}
 	case "settings-usb","diagnostics":
-		v.Title,v.Caption="Connection","USB host, iPod and recovery"
+		v.Title,v.Caption="Connection","Stock iPod USB accessory, no disk mount"
 		v.Rows=[]Row{
-			{"Simple Remote first","150ms press; fresh HID session",Action{Name:"probe-basic-fresh"}},
-			{"Modern accessory probe","No MFi; checks USB iAP1 identification",Action{Name:"probe-accessory"}},
-			{"Open iPod music (read-only)","USB storage, no MFi handshake",Action{Name:"storage-open"}},
-			{"Eject iPod safely","Stop decoder and unmount",Action{Name:"storage-eject"}},
-			{"Connect iPod (legacy)","Existing Extended Interface path",Action{Name:"connect"}},
-			{"Rescan devices",fmt.Sprintf("%d USB devices",len(s.USB)),Action{Name:"rescan"}},
-			{"Enable USB host","Normal iPod use",Action{Name:"usb-host"}},
+			{"Connect iPod (USB accessory)","iAP1 HID, iPod remains the music player",Action{Name:"connect"}},
+			{"Rescan USB devices",externalUSBInventory(s.USB),Action{Name:"rescan"}},
+			{"Simple Remote USB test","Sends HID button presses; iPod must respond",Action{Name:"probe-basic-fresh"}},
+			{"USB identification probe","Queries iAP1 support, no MFi credentials",Action{Name:"probe-accessory"}},
+			{"Enable USB host","Use the existing USB hub/data cable",Action{Name:"usb-host"}},
+			{"Save diagnostic report","Stored on device for review",Action{Name:"export"}},
+			{"Disconnect iPod","Release active accessory session",Action{Name:"disconnect"}},
+			{"Open music as disk (experimental)","Read-only fallback; not the desired dock mode",Action{Name:"storage-open"}},
+			{"Eject experimental disk mode","Only if PodThing mounted the iPod",Action{Name:"storage-eject"}},
 			{"Computer recovery","USB diagnostic download",Action{Name:"usb-recovery"}},
-			{"Save diagnostic report","Stored on device",Action{Name:"export"}},
-			{"Disconnect iPod","Release accessory mode",Action{Name:"disconnect"}},
 		}
 		if s.BasicRemote && !s.AuthRequired {
 			v.Rows=append([]Row{
@@ -142,7 +142,7 @@ func buildLegacyView(s Snapshot) View {
 		}
 	}
 	if s.Screen=="library"&&!s.Connected {
-		action:="storage-open";if s.HostRole=="device" {action="usb-host"}
+		action:="connect";if s.HostRole=="device" {action="usb-host"}
 		if s.AuthRequired && !s.BasicRemote {action="diagnostics"}
 		v.Hits=append(v.Hits,Hit{240,267,320,55,Action{Name:action}})
 	}
@@ -320,7 +320,7 @@ func (p *Painter) Render(v View) *image.RGBA {
 		round(img,24,146,752,251,21,panel)
 		round(img,76,183,88,88,24,tintMix(ac,80))
 		p.glyph(img,104,210,"music",textColor)
-		head,sub:="Your music, ready to go.","Connect your iPod to browse and play."
+		head,sub:="Connect to your iPod.","USB accessory control, without mounting its music."
 		if st.AuthRequired {
 			head="Accessory authentication required"
 			sub="Open Connection settings for the next probe."
@@ -336,11 +336,11 @@ func (p *Painter) Render(v View) *image.RGBA {
 		p.text(img,194,209,27,true,textColor,head,550)
 		p.text(img,194,244,16,false,muted,sub,550)
 		round(img,240,267,320,55,17,ac)
-		label:="Open iPod library"
+		label:="Connect iPod"
 		if st.HostRole=="device" {label="Enable USB host"}
 		if st.AuthRequired {label="Connection diagnostics"}
 		p.text(img,327,302,20,true,bg,label,215)
-		footer:="Use Settings for USB and audio options"
+		footer:="Use Settings for USB diagnostics and experimental modes"
 		if st.BasicRemote { footer="Basic remote commands have no acknowledgment" }
 		p.text(img,244,366,15,false,muted,footer,490)
 	} else {
