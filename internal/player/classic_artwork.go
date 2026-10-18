@@ -42,11 +42,11 @@ func (c *classicArtwork) prepare(root string) error {
  c.root=root
  cmd:=exec.Command("/usr/bin/python3","/usr/lib/podthing/artwork.py",root)
  stdin,e:=cmd.StdinPipe()
- if e!=nil{c.readErr=e;return e}
+ if e!=nil{c.readErr=e;c.failedAt=time.Now();return e}
  stdout,e:=cmd.StdoutPipe()
- if e!=nil{c.readErr=e;return e}
+ if e!=nil{c.readErr=e;c.failedAt=time.Now();return e}
  // stdout is a single protocol line; stderr goes to the boot journal.
- if e=cmd.Start();e!=nil{c.readErr=e;return e}
+ if e=cmd.Start();e!=nil{c.readErr=e;c.failedAt=time.Now();return e}
  c.cmd=cmd
  c.stdin=stdin
  c.reader=bufio.NewReaderSize(stdout,4096)
