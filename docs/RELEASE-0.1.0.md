@@ -1,3 +1,19 @@
+## Read-only player cleanup (current prerelease candidate)
+
+This release returns PodThing's current hardware test to a **read-only iPod Classic music player**, with media decoded on Car Thing and sent to a selected, real USB DAC/audio output. It does **not** add MFi, serial adapters or an accessory-mode handshake.
+
+- **Single UI:** the same neutral charcoal design is shown when disconnected, connected, playing, in Settings and after safe eject. Old duplicated connection-mode screens and menus have been replaced with Music, Audio output, iPod & USB, Controls and About.
+- **One Eject:** the top bar shows Eject whenever an actual PodThing read-only mount is active, including on Now Playing and Settings. No hidden second Eject in a swipe menu.
+- **Eject reliability:** stop audio, wait for cover readers, terminate libgpod worker, then unmount the verified read-only volume. A failed pre-eject report save no longer prevents an otherwise safe unmount. After an app restart, verified read-only mounts can be recovered so the Eject control remains available.
+- **Album art:** do not skip the stock iPod ArtworkDB thumbnail just because the associated music filename cannot be resolved. Use embedded image tags as a fallback and record a diagnostic warning when genuine covers cannot be read. Physical Classic artwork support remains to be verified.
+- **Audio:** newly initialized real hardware uses the USB audio output mode rather than silent simulated playback; the only detected external USB DAC can be auto-selected. Previously saved audio choices are retained. Without an actual compatible playback device, there is no audible output. Car Thing internal capture PCMs are not a speaker.
+
+**Before unplugging:** use the top-bar Eject action and wait for **Safe to disconnect**. Do not forcibly unplug a mounted iPod, trigger a filesystem repair, or assume an old USB root-hubs-only report represents a connected iPod. This is a prerelease for physical evaluation: passing software/QEMU checks cannot prove artwork, USB hub and DAC hardware all work.
+
+Full change notes and test plan: `docs/PLAYER-CLEANUP.md`.
+
+---
+
 ## 0.1.0-test.9: calmer player, native Classic artwork and safer eject
 
 After feedback from a physical Car Thing showing simulated playback but no cover
