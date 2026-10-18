@@ -56,6 +56,32 @@ A separately designed 30-pin accessory with correct serial levels, accessory det
 
 Do not present analog audio as "Digital Audio working." This path may help validate the owner experience before digital audio is available, but remains a hardware development project.
 
+## Research update: Apple protocol reference and Va&Cob Smart Dock (2026-10-18)
+
+### User-provided iAP specification
+
+- Reader link: https://archive.org/details/ipod-accessory-protocol-interface-specification/c/page/24/mode/2up
+- The particular Archive.org viewer/page could not be retrieved from the available browsing tools during this review, so **do not claim we checked page 24 or transcribed protocol fields from it**. Obtain a lawful local copy and verify revision, table contents, packet details, and firmware applicability before writing golden packet vectors.
+- Related historical Apple MFi hardware specification excerpts show that iPod Classic supports **both UART accessory communication and USB device-mode accessory communication**. Those are separate physical transports; a USB-only 30-pin cable does not expose the serial TX/RX pins.
+- The relevant iAP lingoes must be implemented and experimentally validated per model. The protocol reference is **not** a source of functioning cryptographic authentication credentials.
+
+### VaAndCob/iPod-Smart-Dock: real external iPod-control precedent
+
+- Project: https://github.com/VaAndCob/iPod-Smart-Dock
+- Separate OTA/firmware artifacts: https://github.com/VaAndCob/firmware
+- Product claims: Wi-Fi web-based virtual click wheel and iPod library browsing by artist, album, playlist, genre and song; track information, 30-pin docking, Bluetooth 5.3 output, 3.5 mm analog AV/line output, iPod charging and ESP32-oriented hardware.
+- The firmware release notes explicitly describe fixing **iPod database queries**, **execute album**, playlists, recent music indices, multilingual track information, navigation, connection state and user-facing EQ. The vendor's product and release history therefore provide strong evidence for **accessory-controlled metadata/browsing as a viable design category**, without mounting music files as a Linux disk.
+- Its public project repository currently contains a README, photographs, connection-topology/circuit images and GPL-3.0 project materials, but **no source code implementing its iAP stack**. The separate `VaAndCob/firmware` repository provides OTA `.bin` images and explicitly states the firmware is **all rights reserved; binary/source redistribution is not permitted**. Do **not** copy or repackage proprietary firmware or treat it as freely licensed Go/C code merely because a separate project repository is GPL-3.0.
+- This evidence **does not establish** that the Smart Dock performs authenticated Display Remote (`0x03`) requests, USB HID iAP, true digital audio (`0x0A`), or MFi certificate signing. Its advertised Bluetooth audio and 3.5mm line-out may be analog-audio paths. Request a vendor schematic/protocol explanation or validate non-destructively on hardware before asserting how it works.
+- The 30-pin serial/UART + analog line-output architecture is worth an explicit prototype because it can provide genuine iPod-owned playback without mounting files or requiring USB digital capture. But it is **not** equivalent to authenticated USB digital audio, and it may require dedicated connector hardware not present in a standard USB-to-30-pin lead.
+
+**Decision impact:** Run *two* small proof-of-concept workstreams, not an all-or-nothing USB rewrite:
+
+1. **Serial accessory feasibility:** Validate a proper, electrically safe 30-pin serial/UART adapter and Simple Remote on the stock Classic with no filesystem mount. Then test Extended Interface browsing only where the actual device accepts it. Check whether authentication is requested; never claim MFi functionality from a screen of metadata alone.
+2. **USB iUI + authorization feasibility:** Verify physical downstream USB enumeration and actual HID/iUI descriptors, then implement a real authorized MFi provider before gated Display Remote or USB Digital Audio tests. Only call the audio path complete when a PCM stream originates from the playing iPod and is audible at output.
+
+Keep these transports conceptually separate. Successful serial/analog playback would deliver much of the desired dock experience sooner but cannot satisfy the owner's specific *digital* audio/MFi goal by itself.
+
 ## What current code already supplies
 
 - `internal/iap/protocol.go`: iAP1 framing, checksum and HID fragmentation/reassembly.
