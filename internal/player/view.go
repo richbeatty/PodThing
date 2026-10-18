@@ -58,8 +58,16 @@ func buildLegacyView(s Snapshot) View {
 			{"Back to music","",Action{Name:"back"}},
 		}
 	case "settings-usb","diagnostics":
-		v.Title,v.Caption="Connection","USB host, iPod and recovery"
+		v.Title,v.Caption="Connection","USB host, UART accessory, iPod and recovery"
+		serialDetail:="Requires 3.3V USB-UART + 30-pin breakout (19200 baud)"
+		if s.SerialPort!="" {serialDetail="Open: "+s.SerialPort+" (unverified Simple Remote)"}
 		v.Rows=[]Row{
+			{"Serial dock test",serialDetail,Action{Name:"serial-open"}},
+			{"Serial Play / Pause","Send unacknowledged UART remote key",Action{Name:"serial-play"}},
+			{"Serial Next","Send unacknowledged UART remote key",Action{Name:"serial-next"}},
+			{"Serial Previous","Send unacknowledged UART remote key",Action{Name:"serial-previous"}},
+			{"Serial browse artists","Explicit Extended Interface test; may require MFi",Action{Name:"serial-browse"}},
+			{"Close serial test","Releases UART without other iPod commands",Action{Name:"serial-close"}},
 			{"Simple Remote first","150ms press; fresh HID session",Action{Name:"probe-basic-fresh"}},
 			{"Modern accessory probe","No MFi; checks USB iAP1 identification",Action{Name:"probe-accessory"}},
 			{"Open iPod music (read-only)","USB storage, no MFi handshake",Action{Name:"storage-open"}},
