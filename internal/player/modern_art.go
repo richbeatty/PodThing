@@ -33,11 +33,8 @@ func (a *App) fetchCover(card MusicCard) {
 	if a.library==nil || a.volume==nil {return}
 	if int(card.TrackIndex)>=len(a.library.Tracks) {return}
 	t:=a.library.Tracks[card.TrackIndex]
-	path,e:=a.library.ResolveFile(t)
-	if e!=nil{return}
-	// Stock iPod artwork is commonly stored in ArtworkDB/.ithmb rather
-	// than inside AAC/MP3 files. Use Apple's thumb index via libgpod
-	// first; the embedded picture decoder remains a fallback.
+	// ArtworkDB is independent of whether we can resolve a particular
+	// music filename. Never abandon a cover before checking ArtworkDB.
 	img,dbErr:=a.classicArt.Cover(a.library.Root,t.ID)
 	// A few libraries share one album image between tracks; use another
 	// track from the same album if the representative has no picture.
@@ -51,16 +48,27 @@ func (a *App) fetchCover(card MusicCard) {
 		}
 	}
 	if img==nil {
-		img,_=decodeEmbeddedCover(path)
+		// ArtworkDB and embedded tags are independent data sources.
+		// Do not silently skip covers because an individual file is absent.
+		// Try the representative and a few neighboring album tracks.
+		for _,candidate:=range a.library.Tracks {
+			if candidate.ID!=t.ID && (candidate.Artist!=t.Artist || candidate.Album!=t.Album) {continue}
+			path,e:=a.library.ResolveFile(candidate)
+			if e==nil {img,_=decodeEmbeddedCover(path)}
+			if img!=nil {break}
+			if candidate.ID!=t.ID {break}
+		}
 	}
 	if img==nil {
-		// Report the useful reason once rather than filling the diagnostic
-		// report with one warning for each album.
 		a.mu.Lock()
 		first:=!a.artworkWarned
 		a.artworkWarned=true
 		a.mu.Unlock()
-		if first && dbErr!=nil {a.Log("ArtworkDB unavailable for this album: "+dbErr.Error())}
+		if first {
+			reason:="No album image from ArtworkDB or embedded tags"
+			if dbErr!=nil {reason+=" (ArtworkDB: "+dbErr.Error()+")"}
+			a.Log("ARTWORK: "+reason+"; saved USB report can help troubleshoot")
+		}
 		return
 	}
 	a.mu.Lock()

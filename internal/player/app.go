@@ -111,7 +111,9 @@ func New(demo bool, stateDir string) (*App, error) {
 	if e := os.MkdirAll(stateDir, 0700); e != nil {
 		return nil, e
 	}
-	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect your iPod, then choose Connect", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}, AudioMode: "simulated"}}}
+	defaultAudio:="usb" // Real Car Thing playback route, not a silent demo.
+	if demo {defaultAudio="simulated"}
+	a := &App{stateDir: stateDir, s: Snapshot{Version: Version, Demo: demo, Status: "Connect an iPod to open its read-only library", Screen: "library", Category: "Artists", Focus: 0, Accent: [3]uint8{96, 154, 255}, Settings: Settings{Buttons: [4]string{"Artists", "Albums", "Songs", "Playlists"}, AudioMode: defaultAudio}}}
 	b, e := os.ReadFile(filepath.Join(stateDir, "settings.json"))
 	if e == nil {
 		if e = json.Unmarshal(b, &a.s.Settings); e != nil {
@@ -143,7 +145,56 @@ func New(demo bool, stateDir string) (*App, error) {
 		a.s.Now = demoNow(0, false)
 	}
 	a.Scan()
+	if !demo {a.recoverMountedStorage()}
+	// Only preselect a DAC when it is unambiguous; never mistake an iPod
+	// audio capture endpoint for an output. Persisted selections win.
+	if !demo && a.s.Settings.Output=="" && a.s.Settings.AudioMode=="usb" {
+		outputs:=[]string{}
+		for _,pcm:=range a.s.Audio {
+			if !pcm.Capture && pcm.USB && !pcm.IPod {outputs=append(outputs,pcm.ID)}
+		}
+		if len(outputs)==1 {a.s.Settings.Output=outputs[0]}
+	}
 	return a, nil
+}
+// A crash/restart can leave the already read-only PodThing mount behind.
+// Reattach only to the exact iPod partition recorded in Linux mountinfo,
+// then restore browsing or make safe eject available if database parsing fails.
+func (a *App) recoverMountedStorage() {
+	for _,d:=range a.Snapshot().USB {
+		if !d.IPod {continue}
+		vol,err:=storage.RecoverMount(d.SysPath)
+		if errors.Is(err,os.ErrNotExist){continue}
+		if err!=nil {
+			a.Log("Mounted iPod recovery check: "+err.Error())
+			continue
+		}
+		a.volume=vol
+		a.s.StorageMode=true
+		a.s.SafeToDisconnect=false
+		a.s.Screen="home"
+		a.s.Name="iPod Music (read-only)"
+		a.s.Status="Recovered existing read-only iPod mount"
+		lib,err:=storage.Read(vol.Root)
+		if err!=nil {
+			a.s.Connected=false
+			a.s.Error="Library unavailable: "+err.Error()+"; Eject remains available"
+			a.Log("Recovered a read-only mount with unreadable library; Eject is available")
+			return
+		}
+		a.library=lib
+		a.s.Connected=true
+		a.s.Covers=map[string]image.Image{}
+		a.coverTried=map[string]bool{}
+		a.s.Status=fmt.Sprintf("Recovered read-only music library: %d tracks",len(lib.Tracks))
+		a.rebuildHomeAlbums()
+		if err:=a.load();err!=nil {a.Log("Recovered library browse error: "+err.Error())}
+		cards:=a.Snapshot().HomeAlbums
+		if len(cards)>4 {cards=cards[:4]}
+		a.requestCovers(cards)
+		a.Log("Recovered existing read-only iPod library and safe eject")
+		return
+	}
 }
 func (a *App) Log(s string) {
 	a.mu.Lock()
@@ -368,7 +419,10 @@ func (a *App) openStorage() error {
 	s:=a.Snapshot()
 	var ipods []hardware.Device
 	for _,d:=range s.USB {if d.IPod {ipods=append(ipods,d)}}
-	if len(ipods)!=1 {return fmt.Errorf("found %d iPods; connect exactly one stock iPod through the USB host hub",len(ipods))}
+	if len(ipods)!=1 {
+		if len(ipods)==0 {return fmt.Errorf("no iPod USB device detected; check the existing powered USB host hub and 30-pin data cable (Linux reports %d total USB device(s))",len(s.USB))}
+		return fmt.Errorf("found %d iPods; connect exactly one iPod through the powered USB hub",len(ipods))
+	}
 	a.Log("STAGE Storage: locking iPod disk read-only before mount")
 	vol,lib,err:=storage.OpenUSB(ipods[0].SysPath)
 	if err!=nil{return err}
@@ -415,8 +469,8 @@ func (a *App) ejectStorage() error {
 		for _,d:=range a.Snapshot().USB {
 			if !d.IPod {continue}
 			found++
-			vol,lib,err:=storage.RecoverUSB(d.SysPath)
-			if err==nil {a.volume=vol;a.library=lib;break}
+			vol,err:=storage.RecoverMount(d.SysPath)
+			if err==nil {a.volume=vol;break}
 			if !errors.Is(err,os.ErrNotExist) {return fmt.Errorf("cannot verify existing iPod mount: %w",err)}
 		}
 		if a.volume==nil {
@@ -424,14 +478,18 @@ func (a *App) ejectStorage() error {
 			a.mu.Lock()
 			a.s.Status="No iPod storage is mounted by PodThing"
 			a.mu.Unlock()
-			return fmt.Errorf("there is no mounted iPod to eject; use Open iPod music first (detected %d iPod devices)",found)
+			return fmt.Errorf("no PodThing read-only iPod mount found (detected %d iPod device(s)); nothing to unmount",found)
 		}
 	}
 	if err:=a.player.Stop();err!=nil{return err}
 	a.sim.Reset()
-	// Preserve the last storage session before the state is replaced by
-	// Safe to Disconnect, for recovery-mode diagnostics.
-	if err:=a.saveSessionReport();err!=nil {return fmt.Errorf("preserve storage session before eject: %w",err)}
+	// Keep diagnostics best-effort: lack of space in the Car Thing state
+	// partition must not trap an otherwise safe read-only iPod mount.
+	if err:=a.saveSessionReport();err!=nil {a.Log("Could not preserve pre-eject report: "+err.Error())}
+	// Close the libgpod artwork worker BEFORE unmounting. It keeps
+	// ArtworkDB/iTunesDB descriptors open while the process is alive.
+	// artUse excludes new artwork readers until the mount is gone.
+	a.classicArt.Close()
 	if err:=a.volume.Eject();err!=nil{return err}
 	a.volume=nil
 	a.library=nil
@@ -445,7 +503,8 @@ func (a *App) ejectStorage() error {
 	a.s.Covers=nil
 	a.coverTried=nil
 	a.coverOrder=nil
-	a.classicArt.Close()
+	a.s.Artwork=nil
+	a.s.HasArtwork=false
 	a.s.SafeToDisconnect=true
 	a.s.Name=""
 	a.s.Status="Safe to disconnect iPod. Reconnect to browse again."

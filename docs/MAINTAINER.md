@@ -6,6 +6,16 @@ Working branch at review: `podthing-release-0.1.0-test`
 Reviewed branch commit: `446b5d6b30876db4f9642a7a9abedd5a107d0c28`
 Latest published prerelease at review: `podthing-v0.1.0-test.10` (2026-10-17)
 
+## Current direction: read-only music player cleanup (October 18, 2026)
+
+**Supersedes earlier accessory-first/serial/Display Audio explorations for the current Car Thing build.** The owner asked to strip the project back to a reliable, clean **read-only iPod USB storage player**: PodThing mounts only the iPod's storage partition read-only, reads its music database, decodes music on the Car Thing, and sends audio to a selected, actually present ALSA USB DAC/output. Silent simulated playback is for testing only; no analog or USB DAC output should ever be claimed without a real supported device. The stock iPod firmware, 30-pin cable and the existing powered USB host connection remain unchanged.
+
+User-reported blockers that initiated this cleanup: multiple unrelated interface designs depending on connected state, duplicate navigation/debug menus, no visible album covers, and unreliable safe eject. The cleanup branch `storage-player-cleanup-unified-ui` changes UI routing to a single modern design, exposes only one persistent Eject action, closes libgpod artwork readers **before** unmount, permits verified mount-only recovery after app restart, and retries artwork retrieval independent of file-path resolution. The user has not yet physically verified these corrections; do not mark all issues resolved until new diagnostics and test results arrive.
+
+**Do not reintroduce iAP/MFi, serial hardware, authentication probes, or automatic USB configuration changes into the regular player UI without a new explicit decision.** Previous prototype PRs #10, #12, #13 and #14 document abandoned/research directions, not the live product architecture. Keep stock firmware and filesystem integrity as the overriding requirement. A library that cannot be read should fail safely; no fsck, write mounts, or automatic database repair.
+
+See [Read-only player cleanup](PLAYER-CLEANUP.md) for implementation details, known physical limitations and test procedure.
+
 ## Why this file exists
 
 This is the project handoff and continuity document. Read it before changing PodThing, especially when resuming work in a new chat or with a new maintainer. It records the actual implementation, the reasons for architectural changes, owner decisions and hardware observations, the build/release path, and work that has not yet been verified.
