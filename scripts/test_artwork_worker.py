@@ -45,7 +45,7 @@ class ArtworkWorkerTests(unittest.TestCase):
             def run_once():
                 output = io.StringIO()
                 with mock.patch.object(worker, "load_library", return_value=(fake_gpod,None,None)), \
-                     mock.patch.object(sys, "stdin", io.StringIO("100\\nQUIT\\n")), \
+                     mock.patch.object(sys, "stdin", io.StringIO("100\nQUIT\n")), \
                      contextlib.redirect_stdout(output):
                     self.assertEqual(worker.run(str(root)),0)
                 return output.getvalue()
