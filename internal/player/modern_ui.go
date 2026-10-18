@@ -41,11 +41,14 @@ func BuildModernView(s Snapshot) View {
  // Consistent navigation before connection, during playback and after eject.
  // The screen's physical dial covers the far right edge; keep hits <= 716.
  if !s.TrayOpen {
-  v.Hits=append(v.Hits,
-   Hit{16,5,150,61,Action{Name:func()string{if s.Screen=="settings"||strings.HasPrefix(s.Screen,"settings-"){return "back"};return "home"}()}},
-   Hit{201,5,133,61,Action{Name:"navigate",Text:"Albums"}},
-   Hit{408,5,138,61,Action{Name:"playing"}},
-  )
+  back:="home"
+  if s.Screen=="settings" || strings.HasPrefix(s.Screen,"settings-"){back="back"}
+  v.Hits=append(v.Hits,Hit{16,5,150,61,Action{Name:back}})
+  if s.StorageMode || s.Demo || s.Connected {
+   v.Hits=append(v.Hits,
+    Hit{201,5,133,61,Action{Name:"navigate",Text:"Albums"}},
+    Hit{408,5,138,61,Action{Name:"playing"}})
+  }
   if s.StorageMode {v.Hits=append(v.Hits,Hit{584,5,132,61,Action{Name:"storage-eject"}})}
  }
  switch s.Screen {
@@ -211,7 +214,7 @@ func (p *Painter) renderModern(v View) *image.RGBA{
  // Never flood the entire interface with album accent or saturated blue.
  ac:=tastefulAccent(s)
  if s.Screen=="settings" || strings.HasPrefix(s.Screen,"settings-") {
-  p.text(img,27,43,18,true,pale,"← Back",132)
+  p.text(img,27,43,18,true,pale,"Back",132)
  }else{p.text(img,27,43,18,true,pale,"Home",132)}
  p.text(img,208,43,17,false,soft,"Music",115)
  p.text(img,417,43,17,false,soft,"Now playing",139)
