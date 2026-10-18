@@ -308,7 +308,7 @@ func (a *App) startProbe(simple bool) error {
 	s := a.Snapshot()
 	var found []hardware.Device
 	for _, d := range s.USB { if d.IPod { found = append(found,d) } }
-	if len(found) != 1 { return fmt.Errorf("found %d iPods; connect one iPod via powered host adapter",len(found)) }
+	if err := accessoryDiscoveryError(s.USB, s.HostRole); err != nil { return err }
 	a.mu.Lock()
 	a.s.Connected=false
 	a.s.AuthRequired=false
@@ -507,9 +507,7 @@ func (a *App) connect() error {
 			found = append(found, d)
 		}
 	}
-	if len(found) != 1 {
-		return fmt.Errorf("found %d iPods; connect exactly one iPod using a data cable and a powered OTG hub", len(found))
-	}
+	if err := accessoryDiscoveryError(s.USB, s.HostRole); err != nil { return err }
 	w, e := hardware.OpenIPod(found[0], a.Log)
 	if e != nil {
 		return fmt.Errorf("USB HID setup: %w", e)
