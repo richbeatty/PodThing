@@ -3,14 +3,22 @@
 A Car Thing interface for controlling an iPod classic: touchscreen browsing,
 wheel navigation, four remappable presets, and USB audio diagnostics.
 
-**PodThing is independent replacement firmware, with an experimental iPod
-controller.** It uses the Car Thing's independent Linux board-support package;
-it does not fork, install or require Prelude. Stock iPod USB accessory
-authentication may block digital audio; the app reports that explicitly.
+**PodThing is independent replacement firmware for Spotify Car Thing.**
+It uses an independent Linux board-support package, and does not fork, install
+or require Prelude. Current experimental builds can open a stock iPod Classic
+music library via **kernel-enforced read-only USB storage**, parse iTunesDB,
+and either simulate playback without sound or decode tracks locally to an
+attached USB DAC. An earlier iAP accessory-control path is retained for
+experimentation; stock iPod MFi authorization remains unsupported.
 
-The iPod performs playback. PodThing never mounts or modifies its music library.
-The intended connection is Car Thing → powered OTG hub → normal 30-pin USB data
-cable → iPod, with the hub's USB DAC providing 3.5 mm AUX output.
+The intended connection is Car Thing -> powered OTG hub -> normal 30-pin USB
+data cable -> iPod, with an optional hub USB DAC providing 3.5 mm AUX output.
+
+**Start here for ongoing development:** [Maintainer guide](docs/MAINTAINER.md).
+It records the actual working branch, architectural decisions, safe-eject
+requirements, build/release process, owner feedback and outstanding hardware
+checks. Physical compatibility is experimental; protect and back up the iPod
+library before testing.
 
 ## Build the replacement firmware
 
