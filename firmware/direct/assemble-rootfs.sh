@@ -32,6 +32,21 @@ for path in [source, *source.rglob('*')]:
     elif path.is_file():
         target.chmod(0o755 if path.stat().st_mode & 0o111 else 0o644)
 PYMODE
+# BLAS/LAPACK share a Debian update-alternatives SONAME. This appliance
+# extracts verified .deb payloads but deliberately does NOT run postinst
+# scripts, so the standard linker paths are otherwise never created.
+# Create only the two known reference-library links from the actual packages.
+# The FFmpeg ARM64 runtime test below verifies the dynamic loader resolves them.
+for math_lib in blas lapack; do
+    provider="$root/usr/lib/aarch64-linux-gnu/$math_lib/lib$math_lib.so.3"
+    standard="$root/usr/lib/aarch64-linux-gnu/lib$math_lib.so.3"
+    [ -f "$provider" ] || { echo "Required lib$math_lib.so.3 package payload missing: $provider" >&2; exit 1; }
+    if [ -L "$standard" ] || [ -e "$standard" ]; then
+        [ -f "$standard" ] || { echo "Broken existing lib$math_lib.so.3 alternative" >&2; exit 1; }
+    else
+        ln -s "$math_lib/lib$math_lib.so.3" "$standard"
+    fi
+done
 install -D -m0755 /work/dist/podthing-linux-arm64 "$root/usr/bin/podthing"
 install -d "$root/usr/share/podthing/licenses" "$root/var/lib/podthing" "$root/mnt/uboot-env" "$root/run" "$root/tmp"
 cp -a /work/dist/licenses/. "$root/usr/share/podthing/licenses/"
