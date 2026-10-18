@@ -6,6 +6,12 @@ Working branch at review: `podthing-release-0.1.0-test`
 Reviewed branch commit: `446b5d6b30876db4f9642a7a9abedd5a107d0c28`
 Latest published prerelease at review: `podthing-v0.1.0-test.10` (2026-10-17)
 
+## Updated product decision: accessory-first (2026-10-18)
+
+**This decision supersedes the storage-first preference described elsewhere in the historical sections below.** The owner wants a real, authenticated iPod dock: iAP1 Display Remote (`0x03`), Extended Interface (`0x04`), and Digital Audio (`0x0A`) with playback remaining on the stock iPod. The user does not want iPod mass-storage mounting as PodThing's normal connection method. Read-only storage playback was an experiment and should be retained only as an optional fallback until accessory playback works on physical hardware, not expanded into the main product.
+
+Full architecture, hardware/authentication gate, distinct acceptance milestones and reference sources: [Accessory-first roadmap](ACCESSORY-ROADMAP.md). No verified MFi chip/provider or end-to-end digital audio exists as of this decision; do not claim otherwise. The lack of enumeration in the owner's last test.9 report (#9) must be resolved before meaningful USB accessory handshakes can be tested.
+
 ## Why this file exists
 
 This is the project handoff and continuity document. Read it before changing PodThing, especially when resuming work in a new chat or with a new maintainer. It records the actual implementation, the reasons for architectural changes, owner decisions and hardware observations, the build/release path, and work that has not yet been verified.
