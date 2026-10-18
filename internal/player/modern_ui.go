@@ -51,11 +51,12 @@ func BuildModernView(s Snapshot) View {
  switch s.Screen {
  case "home":
   v.Title="Home"
-  if !s.StorageMode && !s.Demo && !s.Connected {
+  if !s.Demo && !s.Connected {
    v.Caption="Connect your iPod to browse music"
-   action:="storage-open"
-   if s.HostRole=="device" {action="usb-host"}
-   v.Tiles=append(v.Tiles,ModernTile{X:150,Y:224,W:411,H:76,Title:"Open iPod music (read-only)",Subtitle:"",Action:Action{Name:action}})
+   action,label:="storage-open","Open iPod music (read-only)"
+   if s.HostRole=="device" {action="usb-host";label="Enable USB host"}
+   if s.StorageMode {action="export";label="Save diagnostics before eject"}
+   v.Tiles=append(v.Tiles,ModernTile{X:150,Y:224,W:411,H:76,Title:label,Action:Action{Name:action}})
    break
   }
   if len(s.Recent)>0 {
@@ -80,11 +81,12 @@ func BuildModernView(s Snapshot) View {
   }
  case "library":
   v.Title=s.Category
-  if !s.StorageMode && !s.Demo && !s.Connected {
+  if !s.Demo && !s.Connected {
    v.Caption="Your music lives on your iPod"
-   action:="storage-open"
-   if s.HostRole=="device" {action="usb-host"}
-   v.Tiles=append(v.Tiles,ModernTile{X:150,Y:224,W:411,H:76,Title:"Open iPod music (read-only)",Action:Action{Name:action}})
+   action,label:="storage-open","Open iPod music (read-only)"
+   if s.HostRole=="device" {action="usb-host";label="Enable USB host"}
+   if s.StorageMode {action="export";label="Save diagnostics before eject"}
+   v.Tiles=append(v.Tiles,ModernTile{X:150,Y:224,W:411,H:76,Title:label,Action:Action{Name:action}})
    break
   }
   v.Caption=fmt.Sprintf("%d %s",s.Total,strings.ToLower(s.Category))
@@ -217,17 +219,21 @@ func (p *Painter) renderModern(v View) *image.RGBA{
 
  fill(img,26,67,675,1,hair)
  if s.Screen=="home" {
-  if !s.StorageMode && !s.Demo && !s.Connected {
-   p.text(img,49,161,31,true,pale,"Plug in your iPod",620)
-   p.text(img,49,201,16,false,soft,"Read-only library. Music plays from the Car Thing.",670)
+  if !s.Demo && !s.Connected {
+   heading,detail:="Plug in your iPod","Read-only library. Music plays from the Car Thing."
+   if s.StorageMode {heading="Recovered read-only mount";detail="Library unavailable. Use Eject in the top bar."}
+   p.text(img,49,161,31,true,pale,heading,620)
+   p.text(img,49,201,16,false,soft,detail,670)
   }else{
    p.text(img,27,113,29,true,pale,"Your music",450)
    p.text(img,27,137,14,false,soft,v.Caption,500)
    p.text(img,27,342,12,false,soft,"BROWSE",270)
   }
- }else if s.Screen=="library" && !s.StorageMode && !s.Demo && !s.Connected {
+ }else if s.Screen=="library" && !s.Demo && !s.Connected {
   p.text(img,49,161,31,true,pale,"Connect your iPod",630)
-  p.text(img,49,201,16,false,soft,"Your library remains read-only.",630)
+  detail:="Your library remains read-only."
+  if s.StorageMode {detail="Existing mount detected. Eject before reconnecting."}
+  p.text(img,49,201,16,false,soft,detail,630)
  }else if s.Screen=="library"{
   for i,c:=range Categories{
    x:=26+i*174
