@@ -39,6 +39,7 @@ type Snapshot struct {
 	AuthDetail   string           `json:"auth_detail,omitempty"`
 	AuthStage    string           `json:"auth_stage,omitempty"`
 	BasicRemote  bool             `json:"basic_remote"`
+	SerialPort   string           `json:"serial_port,omitempty"`
 	StorageMode  bool             `json:"storage_mode"`
 	TrayOpen     bool             `json:"tray_open"`
 	SortMode     string           `json:"sort_mode"`
@@ -88,6 +89,7 @@ type App struct {
 	op        sync.Mutex
 	s         Snapshot
 	client    *iap.Client
+	serial    *iap.Client
 	volume    *storage.Volume
 	library   *storage.Library
 	player    storage.Playback
@@ -237,7 +239,7 @@ func (a *App) run(fn func() error) error {
 	latest := a.Snapshot()
 	// A switch *to* host mode has no iPod session yet. Don't overwrite
 	// the last useful report with an empty post-recovery host snapshot.
-	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || a.volume != nil || e != nil) {
+	if !latest.Demo && latest.HostRole != "device" && (a.client != nil || a.serial != nil || a.volume != nil || e != nil) {
 		if se := a.saveSessionReport(); se != nil {
 			a.Log("Could not preserve USB session: " + se.Error())
 		}
@@ -269,6 +271,7 @@ func (a *App) Close() {
 		_ = a.client.Close()
 		a.client = nil
 	}
+	if a.serial != nil { _ = a.closeSerial() }
 }
 // recordAuthentication keeps the transport open for a user-invoked
 // compatibility probe. No MFi success is implied by this diagnostic state.
@@ -860,6 +863,14 @@ func (a *App) Action(v Action) error {
 			return a.playRecent(uint32(v.Value))
 		case "open-album":
 			return a.openAlbum(v.Text)
+		case "serial-open":
+			return a.openSerial()
+		case "serial-play", "serial-next", "serial-previous":
+			return a.serialKey(v.Name)
+		case "serial-browse":
+			return a.serialBrowse()
+		case "serial-close":
+			return a.closeSerial()
 		case "storage-open":
 			return a.openStorage()
 		case "storage-eject":
@@ -1005,6 +1016,7 @@ func (a *App) Action(v Action) error {
 			a.Scan()
 			return nil
 		case "usb-host", "usb-recovery":
+			if a.serial!=nil {if err:=a.closeSerial();err!=nil{return err}}
 			if s.Demo {
 				return errors.New("USB role changes require the real Car Thing")
 			}
