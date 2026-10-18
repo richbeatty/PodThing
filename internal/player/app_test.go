@@ -234,14 +234,17 @@ func TestFreshProbesAreNeverHardwareActionsInDemo(t *testing.T){
 		if err:=a.Action(Action{Name:name});err==nil{t.Errorf("demo allowed %s",name)}
 	}
 }
-func TestConnectionViewOffersSeparateProbePaths(t *testing.T){
+func TestConnectionMenuUsesOnlyReadOnlyStorageAndDiagnostics(t *testing.T){
 	a:=demoApp(t)
 	action(t,a,"diagnostics",0,"")
 	rows:=a.View().Rows
-	got:=map[string]bool{}
-	for _,row:=range rows{got[row.Action.Name]=true}
-	if !got["probe-basic-fresh"]||!got["probe-accessory"]||!got["connect"]{
-		t.Fatalf("missing probe choices: %+v",rows)
+	got:=map[string]int{}
+	for _,row:=range rows{got[row.Action.Name]++}
+	for _,name:=range []string{"storage-open","rescan","usb-host","export","usb-recovery"} {
+		if got[name]!=1 {t.Fatalf("%s missing or duplicated in connection menu: %+v",name,rows)}
+	}
+	for _,name:=range []string{"connect","probe-basic-fresh","probe-accessory","digital","capture","audio-start","storage-eject"} {
+		if got[name]!=0 {t.Fatalf("obsolete or duplicate connection option %q still shown: %+v",name,rows)}
 	}
 }
 
@@ -391,11 +394,18 @@ func TestMinimalUIIsNeutralAndCriticalButtonsClearOfKnob(t *testing.T) {
 	if img.Bounds().Dx()!=800||img.Bounds().Dy()!=480{t.Fatal("bad Car Thing geometry")}
 	r,g,b,_:=img.At(775,170).RGBA()
 	if b>r+2000||b>g+2000{t.Fatalf("background should not have a saturated blue wash: rgb16 %d,%d,%d",r,g,b)}
-	for _,name:=range []string{"play","next","previous","tray"}{
+	for _,name:=range []string{"play","next","previous","storage-eject"}{
 		found:=false
 		for _,hit:=range view.Hits {
 			if hit.Action.Name==name&&hit.X+hit.W<=716 {found=true}
 		}
+		// The synthetic playing test isn't mounted; Eject only appears
+		// for a verified mounted storage session, not by screen name.
+		if name=="storage-eject" && !view.State.StorageMode {continue}
 		if !found{t.Fatalf("%s is not reachable left of hardware dial",name)}
 	}
+	// Presets are shown by the swipe gesture, never a duplicate More button.
+	for _,hit:=range view.Hits {if hit.Action.Name=="tray"{t.Fatal("preset tray must be swipe-only")}}
+	if err:=a.Action(Action{Name:"tray"});err!=nil{t.Fatal(err)}
+	if !a.Snapshot().TrayOpen{t.Fatal("swipe-down action did not open presets")}
 }
