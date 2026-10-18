@@ -36,8 +36,8 @@ type View struct {
 
 func (a *App) View() View { return BuildView(a.Snapshot()) }
 func BuildView(s Snapshot) View {
-	if s.StorageMode || s.SafeToDisconnect {return BuildModernView(s)}
-	return buildLegacyView(s)
+	// Connection status must never select a different visual design.
+	return BuildModernView(s)
 }
 func buildLegacyView(s Snapshot) View {
 	v := View{State:s,Title:s.Category}
@@ -49,69 +49,38 @@ func buildLegacyView(s Snapshot) View {
 		for i,c:=range Categories {v.Hits=append(v.Hits,Hit{16+i*194,83,186,43,Action{Name:"navigate",Text:c}})}
 		for i,e:=range s.Entries {v.Rows=append(v.Rows,Row{Title:e.Name,Detail:fmt.Sprintf("%d",int(s.Offset)+i+1),Action:Action{Name:"open",Value:i}})}
 	case "settings":
-		v.Title,v.Caption="Settings","Connection, audio and preferences"
+		v.Title,v.Caption="Settings","Music, sound and device"
 		v.Rows=[]Row{
-			{"Connection & USB","iPod and recovery",Action{Name:"settings-page",Text:"settings-usb"}},
-			{"Audio","Output and digital audio",Action{Name:"settings-page",Text:"settings-audio"}},
-			{"Controls","Wheel and presets",Action{Name:"settings-page",Text:"settings-controls"}},
+			{"iPod & USB","Connection, eject status, diagnostics",Action{Name:"settings-page",Text:"settings-usb"}},
+			{"Audio output","Real output or silent preview",Action{Name:"settings-page",Text:"settings-audio"}},
+			{"Controls","Wheel and swipe-down presets",Action{Name:"settings-page",Text:"settings-controls"}},
 			{"About","Version and credits",Action{Name:"settings-page",Text:"settings-about"}},
-			{"Back to music","",Action{Name:"back"}},
 		}
 	case "settings-usb","diagnostics":
-		v.Title,v.Caption="Connection","USB host, iPod and recovery"
+		v.Title,v.Caption="iPod & USB","Storage is always mounted read-only"
 		v.Rows=[]Row{
-			{"Simple Remote first","150ms press; fresh HID session",Action{Name:"probe-basic-fresh"}},
-			{"Modern accessory probe","No MFi; checks USB iAP1 identification",Action{Name:"probe-accessory"}},
-			{"Open iPod music (read-only)","USB storage, no MFi handshake",Action{Name:"storage-open"}},
-			{"Eject iPod safely","Stop decoder and unmount",Action{Name:"storage-eject"}},
-			{"Connect iPod (legacy)","Existing Extended Interface path",Action{Name:"connect"}},
-			{"Rescan devices",fmt.Sprintf("%d USB devices",len(s.USB)),Action{Name:"rescan"}},
-			{"Enable USB host","Normal iPod use",Action{Name:"usb-host"}},
-			{"Computer recovery","USB diagnostic download",Action{Name:"usb-recovery"}},
-			{"Save diagnostic report","Stored on device",Action{Name:"export"}},
-			{"Disconnect iPod","Release accessory mode",Action{Name:"disconnect"}},
+			{"Rescan USB devices",fmt.Sprintf("%d detected",len(s.USB)),Action{Name:"rescan"}},
+			{"Enable USB host","Required to read your iPod",Action{Name:"usb-host"}},
+			{"Save diagnostics","Report for troubleshooting",Action{Name:"export"}},
+			{"Computer recovery","USB network recovery (ejects first)",Action{Name:"usb-recovery"}},
 		}
-		if s.BasicRemote && !s.AuthRequired {
-			v.Rows=append([]Row{
-				{"Test Play / Pause","150ms press; no ACK",Action{Name:"play"}},
-				{"Test Next Track","150ms press; no ACK",Action{Name:"next"}},
-				{"Test Previous Track","150ms press; no ACK",Action{Name:"previous"}},
-			},v.Rows...)
-		}
-		if s.ProbeResult!="" {
-			v.Rows=append([]Row{{"Modern probe result",s.ProbeResult,Action{Name:"settings-page",Text:"settings-usb"}}},v.Rows...)
-		}
-		if s.AuthRequired {
-			probe:=[]Row{
-				{"Authentication requested",s.AuthDetail,Action{Name:"settings-page",Text:"settings-usb"}},
-				{"Blocked at",s.AuthStage,Action{Name:"settings-page",Text:"settings-usb"}},
-			}
-			if !s.BasicRemote {
-				probe=append(probe,Row{"Legacy Simple Remote","After auth; fresh test preferred",Action{Name:"probe-basic"}})
-			} else {
-				probe=append(probe,
-					Row{"Test Play / Pause","No ACK; watch iPod",Action{Name:"play"}},
-					Row{"Test Next Track","No ACK; watch iPod",Action{Name:"next"}},
-					Row{"Test Previous Track","No ACK; watch iPod",Action{Name:"previous"}})
-			}
-			v.Rows=append(probe,v.Rows...)
+		if s.StorageMode {
+			// Eject is the single persistent header action. Do not add
+			// a second, scroll-hidden Eject menu item.
+			v.Caption="iPod mounted read-only · Eject in top bar"
+		} else if s.SafeToDisconnect {
+			v.Caption="iPod unmounted. Safe to disconnect."
+		} else {
+			v.Rows=append([]Row{{"Open iPod music","Read-only library",Action{Name:"storage-open"}}},v.Rows...)
 		}
 		if s.Error!="" {v.Rows=append(v.Rows,Row{"Last error",s.Error,Action{Name:"rescan"}})}
-		for _,d:=range s.USB {if d.IPod {v.Rows=append(v.Rows,Row{"Detected iPod",d.Product+fmt.Sprintf(" / cfg %d",d.Active),Action{Name:"rescan"}})}}
-		v.Rows=append(v.Rows,Row{"Back","",Action{Name:"back"}})
 	case "settings-audio":
-		v.Title,v.Caption="Audio","Playback and output settings"
-		capture,output:=s.Settings.Capture,s.Settings.Output
-		if capture=="" {capture="Not selected"}
-		if output=="" {output="Not selected"}
+		v.Title,v.Caption="Audio","Playback from Car Thing to an output device"
+		output:=s.Settings.Output
+		if output=="" {output="Select a USB DAC / hub output"}
 		v.Rows=[]Row{
-			{"Request digital audio","iPod accessory mode required",Action{Name:"digital"}},
-			{"iPod audio capture",capture,Action{Name:"capture"}},
-			{"Hub / DAC output",output,Action{Name:"output"}},
-			{"Test DAC tone","3 second test",Action{Name:"tone"}},
-			{"Start audio route","iPod to USB output",Action{Name:"audio-start"}},
-			{"Stop audio",s.AudioStatus,Action{Name:"audio-stop"}},
-			{"Back","",Action{Name:"back"}},
+			{"Output device",output,Action{Name:"output"}},
+			{"Test output","Three-second tone",Action{Name:"tone"}},
 		}
 	case "settings-controls":
 		v.Title,v.Caption="Controls","Customize your hardware buttons"
@@ -122,10 +91,8 @@ func buildLegacyView(s Snapshot) View {
 		v.Title,v.Caption="About","Firmware and acknowledgments"
 		v.Rows=[]Row{
 			{"Version",s.Version,Action{Name:"settings-page",Text:"settings-about"}},
-			{"Bootloader","ThingLabsOSS Superbird U-Boot",Action{Name:"settings-page",Text:"settings-about"}},
-			{"Kernel and BSP","Joey Eamigh / yocto-superbird",Action{Name:"settings-page",Text:"settings-about"}},
-			{"Artwork colors","Auto when iPod artwork is available",Action{Name:"settings-page",Text:"settings-about"}},
-			{"Back","",Action{Name:"back"}},
+			{"Music source","Read-only iPod storage",Action{Name:"settings-page",Text:"settings-about"}},
+			{"Artwork","ArtworkDB, then embedded cover",Action{Name:"settings-page",Text:"settings-about"}},
 		}
 	case "playing":
 		v.Title,v.Caption="Now Playing","Playback on your iPod"
