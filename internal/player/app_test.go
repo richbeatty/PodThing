@@ -409,3 +409,75 @@ func TestMinimalUIIsNeutralAndCriticalButtonsClearOfKnob(t *testing.T) {
 	if err:=a.Action(Action{Name:"tray"});err!=nil{t.Fatal(err)}
 	if !a.Snapshot().TrayOpen{t.Fatal("swipe-down action did not open presets")}
 }
+
+func TestUnifiedModernUIAcrossConnectionStates(t *testing.T) {
+	a:=demoApp(t)
+	p,err:=NewPainter()
+	if err!=nil{t.Fatal(err)}
+	check:=func(screen string, mounted, connected, safe bool){
+		t.Helper()
+		a.mu.Lock()
+		a.s.Demo=false
+		a.s.StorageMode=mounted
+		a.s.Connected=connected
+		a.s.SafeToDisconnect=safe
+		a.s.Screen=screen
+		a.s.TrayOpen=false
+		a.mu.Unlock()
+		v:=a.View()
+		img:=p.Render(v)
+		if img.Bounds().Dx()!=800 || img.Bounds().Dy()!=480{t.Fatal("wrong modern display geometry")}
+		// All states share the same charcoal header, not a legacy blue design.
+		r,g,b,_:=img.At(5,5).RGBA()
+		if b>r+1500 || b>g+1500{t.Fatalf("%s switched to old blue UI: rgb %d,%d,%d",screen,r,g,b)}
+		eject:=0
+		for _,h:=range v.Hits {
+			if h.Action.Name=="storage-eject"{
+				eject++
+				if h.X+h.W>716{t.Fatal("eject overlaps hardware dial")}
+			}
+			if h.Action.Name=="connect"||h.Action.Name=="probe-accessory"||h.Action.Name=="probe-basic-fresh"{
+				t.Fatalf("%s showed an obsolete iAP control",screen)
+			}
+		}
+		if mounted && eject!=1 {t.Fatalf("%s has %d eject actions, want exactly one",screen,eject)}
+		if !mounted && eject!=0 {t.Fatalf("%s has eject action without mounted storage",screen)}
+	}
+	check("library",false,false,false)
+	check("settings",false,false,false)
+	check("home",true,true,false)
+	check("library",true,true,false)
+	check("settings-usb",true,true,false)
+	check("playing",true,true,false)
+	check("unmounted",false,false,true)
+}
+
+func TestStorageConnectionIsDefaultAndEjectIsNotHiddenInSettings(t *testing.T){
+	a:=demoApp(t)
+	a.mu.Lock()
+	a.s.Demo=false
+	a.s.Screen="library"
+	a.s.Connected=false
+	a.s.StorageMode=false
+	a.s.HostRole="host"
+	a.mu.Unlock()
+	v:=a.View()
+	hasOpen:=false
+	for _,h:=range v.Hits{
+		if h.Action.Name=="storage-open"{hasOpen=true}
+		if h.Action.Name=="connect"{t.Fatal("legacy accessory connect must not be main action")}
+	}
+	if !hasOpen{t.Fatal("no read-only library connect action")}
+	a.mu.Lock()
+	a.s.StorageMode=true
+	a.s.Connected=true
+	a.s.Screen="settings-usb"
+	a.mu.Unlock()
+	v=a.View()
+	for _,row:=range v.Rows{
+		if row.Action.Name=="storage-eject"{t.Fatal("eject must be single global action, not duplicated in settings")}
+	}
+	eject:=0
+	for _,h:=range v.Hits{if h.Action.Name=="storage-eject"{eject++}}
+	if eject!=1{t.Fatalf("eject missing in settings, count=%d",eject)}
+}
