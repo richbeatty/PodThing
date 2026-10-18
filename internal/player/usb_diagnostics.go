@@ -61,3 +61,28 @@ func storageDiscoveryError(devices []hardware.Device, role string) error {
     }
     return fmt.Errorf("%d external USB device(s) detected but no iPod. Check the 30-pin data cable, iPod power, and hub connection before trying disk mode", len(external))
 }
+
+// accessoryDiscoveryError is for the no-mount iPod USB Interface path.
+// A real downstream Apple USB device is prerequisite to any HID/iAP1 test.
+// Do not confuse an unenumerated USB port with an MFi authentication failure.
+func accessoryDiscoveryError(devices []hardware.Device, role string) error {
+    if role != "host" {
+        return fmt.Errorf("USB role is %q; select Enable USB host before trying USB accessory control", role)
+    }
+    ipods, external, apple := 0, 0, false
+    for _, d := range devices {
+        if d.IPod { ipods++ }
+        if isRootUSBController(d) { continue }
+        external++
+        if strings.EqualFold(d.Vendor, "05ac") { apple = true }
+    }
+    if ipods == 1 { return nil }
+    if ipods > 1 { return fmt.Errorf("found %d iPods; connect exactly one before starting iAP1", ipods) }
+    if external == 0 {
+        return errors.New("USB host is enabled, but Linux sees only its internal root hubs. No iPod or powered hub enumerated; check the existing USB host hub, its power and the stock 30-pin data cable before any iAP1 or MFi test")
+    }
+    if apple {
+        return errors.New("Apple USB device detected but not recognized as a supported iPod. Save the USB descriptor report; no iAP command was sent")
+    }
+    return fmt.Errorf("%d external USB device(s) present, but no Apple iPod enumerated. Check the existing USB hub and 30-pin data cable", external)
+}
